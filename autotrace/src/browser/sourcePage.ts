@@ -6,6 +6,24 @@ import type { SearchResult } from "../types/search.js";
 const PAGE_TIMEOUT_MS = 20000;
 const BODY_TIMEOUT_MS = 10000;
 
+// Below this, a container is treated as a stub and the next selector is tried.
+const MIN_CONTENT_LENGTH = 200;
+
+/**
+ * Containers that hold the readable content of a source page, most specific first.
+ * The vBulletin post-body selector is the one the visited automotive forums actually use; the
+ * remaining entries cover other common forum and article layouts. Selectors are confined to this
+ * layer, so a layout change is fixed here without touching research or reasoning code.
+ */
+const CONTENT_SELECTORS = [
+  "div[id^='post_message_']",
+  ".bbWrapper",
+  ".postbody",
+  "[itemprop='articleBody']",
+  "article",
+  "main",
+];
+
 /**
  * Automotive forums and code-reference sites return empty or challenge pages to datacenter
  * traffic, so source visits use the same stealth plus residential egress as the search step.
@@ -15,7 +33,39 @@ const SOURCE_LAUNCH_OPTIONS: LaunchOptions = {
   proxy: "us",
 };
 
-// Read visible body text after navigation. Evidence keeps the original search-result title.
+// Page text with the selector that produced it, so extraction quality stays inspectable.
+type ExtractedText = {
+  text: string;
+  selector: string;
+};
+
+/**
+ * Read text from the first content container that yields a usable amount of text.
+ * Forum threads keep the technician discussion inside post bodies, so reading the whole document
+ * returns navigation and thread furniture instead of the discussion.
+ */
+async function readContentText(page: Page): Promise<ExtractedText | null> {
+  return page.evaluate(
+    ({ selectors, minLength }: { selectors: string[]; minLength: number }) => {
+      for (const selector of selectors) {
+        const blocks = Array.from(document.querySelectorAll(selector))
+          .map((node) => (node instanceof HTMLElement ? node.innerText : node.textContent ?? ""))
+          .map((text) => text.trim())
+          .filter((text) => text.length > 0);
+
+        const text = blocks.join("\n\n").trim();
+        if (text.length >= minLength) {
+          return { text, selector };
+        }
+      }
+
+      return null;
+    },
+    { selectors: CONTENT_SELECTORS, minLength: MIN_CONTENT_LENGTH }
+  );
+}
+
+// Read content text after navigation, falling back to the whole page. Evidence keeps the search-result title.
 async function readPageContent(page: Page, source: SearchResult): Promise<PageContent | null> {
   await page.goto(source.url, {
     waitUntil: "domcontentloaded",
@@ -23,7 +73,12 @@ async function readPageContent(page: Page, source: SearchResult): Promise<PageCo
   });
 
   const liveTitle = (await page.title()).trim();
-  const text = (await page.locator("body").innerText({ timeout: BODY_TIMEOUT_MS })).trim();
+  const content = await readContentText(page);
+  const text = content
+    ? content.text
+    : (await page.locator("body").innerText({ timeout: BODY_TIMEOUT_MS })).trim();
+  console.log(`Content read from: ${content ? content.selector : "whole page (no content container matched)"}`);
+
   if (!text) {
     console.log(`Source page returned no readable text:\nURL: ${source.url}\n`);
     return null;
