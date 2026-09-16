@@ -1,5 +1,7 @@
+import { buildHypothesisBoard } from "./reasoning/hypotheses.js";
 import { research, type ResearchResult } from "./research/research.js";
 import type { DiagnosticCase } from "./types/diagnosticCase.js";
+import type { HypothesisBoard } from "./types/hypothesis.js";
 
 const diagnosticCase: DiagnosticCase = {
   vehicle: {
@@ -93,13 +95,49 @@ function printReport(result: ResearchResult) {
   }
 }
 
-// Run the Mercedes demonstration case and print sources plus extracted evidence.
+// Print the competing hypotheses and the evidence collected against each one.
+function printHypothesisBoard(board: HypothesisBoard) {
+  console.log("Competing hypotheses (possible causes, none confirmed):\n");
+
+  for (const entry of board.hypotheses) {
+    const { hypothesis, mentions } = entry;
+    console.log(`${hypothesis.id} — ${hypothesis.label}`);
+    console.log(`   Claim: ${hypothesis.claim}`);
+    console.log(`   Possible causes: ${hypothesis.possibleCauses.join("; ")}`);
+
+    if (mentions.length === 0) {
+      console.log("   Evidence mentioning this system: none collected yet\n");
+      continue;
+    }
+
+    console.log(`   Evidence mentioning this system: ${mentions.length} (not yet evaluated as support)`);
+    for (const mention of mentions) {
+      console.log(`     - ${mention.evidence.title}`);
+      console.log(`       URL: ${mention.evidence.url}`);
+      console.log(`       Matched terms: ${mention.matchedTerms.join(", ")}`);
+    }
+    console.log("");
+  }
+
+  if (board.unmentionedEvidence.length > 0) {
+    console.log("Evidence that mentioned no hypothesis system:\n");
+    for (const [index, item] of board.unmentionedEvidence.entries()) {
+      console.log(`${index + 1}. ${item.title}`);
+      console.log(`   URL: ${item.url}\n`);
+    }
+  }
+}
+
+// Run the Mercedes demonstration case and print sources, extracted evidence, and the hypothesis board.
 async function main() {
   console.log("AutoTrace Research Agent");
   console.log("========================\n");
 
   const result = await research(diagnosticCase);
   printReport(result);
+
+  console.log("");
+  printHypothesisBoard(buildHypothesisBoard(result.evidence));
 }
 
 main().catch((error) => {

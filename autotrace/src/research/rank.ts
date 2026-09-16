@@ -1,5 +1,7 @@
 import type { DiagnosticCase } from "../types/diagnosticCase.js";
 import type { SearchResult } from "../types/search.js";
+import type { TermGroup } from "../types/terms.js";
+import { containsTerm, groupMatches, matchedGroupLabels } from "./terms.js";
 
 const TRACKING_PARAM_NAMES = new Set([
   "msclkid",
@@ -88,12 +90,6 @@ const MIN_KEPT_SCORE = 1;
 
 // Leave at least one visit for a second host, so evidence never comes from a single site.
 const MAX_PAGES_PER_HOST = 3;
-
-// A set of interchangeable terms that should score once, regardless of how many of them appear.
-export type TermGroup = {
-  label: string;
-  terms: string[];
-};
 
 /**
  * A vehicle term group carries its own weight: naming the model or platform ("C240", "W203") is
@@ -219,19 +215,6 @@ export function deduplicateByUrl(results: SearchResult[]): SearchResult[] {
   return unique;
 }
 
-// True when haystack contains a whole term, so short tokens do not match unrelated words.
-function containsTerm(haystack: string, term: string): boolean {
-  const token = term.toLowerCase().trim();
-  if (!token) {
-    return false;
-  }
-  if (token.includes(" ")) {
-    return haystack.includes(token);
-  }
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`).test(haystack);
-}
-
 // Spacing/hyphenation variants of a designation such as "C240" or "W203", as written in URLs and titles.
 function designationVariants(designation: string): string[] {
   const value = designation.toLowerCase().trim();
@@ -323,17 +306,10 @@ export function buildRankTerms(diagnosticCase: DiagnosticCase): RankTerms {
   };
 }
 
-// Labels of the groups whose terms appear in the haystack, each group counted once.
-function matchedGroups(haystack: string, groups: TermGroup[]): string[] {
-  return groups
-    .filter((group) => group.terms.some((term) => containsTerm(haystack, term)))
-    .map((group) => group.label);
-}
-
 // Matched vehicle groups, strongest first, so the most specific matches are the ones that score.
 function matchedVehicleGroups(haystack: string, groups: VehicleTermGroup[]): VehicleTermGroup[] {
   return groups
-    .filter((group) => group.terms.some((term) => containsTerm(haystack, term)))
+    .filter((group) => groupMatches(haystack, group))
     .sort((left, right) => right.weight - left.weight);
 }
 
@@ -344,7 +320,7 @@ function hasTechnicalSignal(haystack: string, terms: RankTerms): boolean {
       return true;
     }
   }
-  return matchedGroups(haystack, SYMPTOM_GROUPS).length > 0;
+  return matchedGroupLabels(haystack, SYMPTOM_GROUPS).length > 0;
 }
 
 // True when the hostname is a dealer, inventory, or generic manufacturer marketing site.
@@ -492,13 +468,13 @@ function scoreCandidate(result: SearchResult, terms: RankTerms): CandidateScore 
   const haystack = `${result.title} ${result.url}`.toLowerCase();
   const matchedCodes = terms.codes.filter((code) => containsTerm(haystack, code));
   const vehicleMatches = matchedVehicleGroups(haystack, terms.vehicleGroups).slice(0, MAX_VEHICLE_GROUPS);
-  const symptomMatches = matchedGroups(haystack, SYMPTOM_GROUPS);
+  const symptomMatches = matchedGroupLabels(haystack, SYMPTOM_GROUPS);
   if (matchedCodes.length === 0 && vehicleMatches.length === 0 && symptomMatches.length === 0) {
     return { score: 0, signals: [] };
   }
 
-  const technicalMatches = matchedGroups(haystack, TECHNICAL_GROUPS).slice(0, MAX_TECHNICAL_GROUPS);
-  const systemMatches = matchedGroups(haystack, SYSTEM_GROUPS).slice(0, MAX_SYSTEM_GROUPS);
+  const technicalMatches = matchedGroupLabels(haystack, TECHNICAL_GROUPS).slice(0, MAX_TECHNICAL_GROUPS);
+  const systemMatches = matchedGroupLabels(haystack, SYSTEM_GROUPS).slice(0, MAX_SYSTEM_GROUPS);
   const signals: string[] = [];
   let score = 0;
 

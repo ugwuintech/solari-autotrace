@@ -1,6 +1,7 @@
 import type { Evidence, EvidenceRelevance } from "../types/evidence.js";
 import type { PageContent } from "../types/pageContent.js";
 import type { CandidateRejection } from "../types/rejection.js";
+import { containsTerm } from "./terms.js";
 
 const MIN_TEXT_LENGTH = 80;
 const MIN_FINDING_LENGTH = 40;
@@ -52,19 +53,6 @@ function isUnusable(text: string): boolean {
 
   const prefix = text.slice(0, 500).toLowerCase();
   return UNUSABLE_PREFIX_PATTERNS.some((pattern) => prefix.includes(pattern));
-}
-
-// True when haystack contains a whole term, so short tokens do not match unrelated words.
-function containsTerm(haystack: string, term: string): boolean {
-  const token = term.toLowerCase().trim();
-  if (!token) {
-    return false;
-  }
-  if (token.includes(" ")) {
-    return haystack.includes(token);
-  }
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`).test(haystack);
 }
 
 // True when page text contains investigation-specific terms. This is a relevance gate, not a diagnosis.
