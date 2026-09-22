@@ -1,7 +1,14 @@
+import { createOllamaProvider } from "./llm/ollama.js";
 import { buildHypothesisBoard } from "./reasoning/hypotheses.js";
 import { research, type ResearchResult } from "./research/research.js";
 import type { DiagnosticCase } from "./types/diagnosticCase.js";
-import type { HypothesisBoard } from "./types/hypothesis.js";
+import type { HypothesisBoard, HypothesisId } from "./types/hypothesis.js";
+import type {
+  DiagnosticAssessment,
+  EvidenceReference,
+  EvidenceSupport,
+  ReasoningRequest,
+} from "./types/reasoning.js";
 
 const diagnosticCase: DiagnosticCase = {
   vehicle: {
@@ -128,7 +135,116 @@ function printHypothesisBoard(board: HypothesisBoard) {
   }
 }
 
-// Run the Mercedes demonstration case and print sources, extracted evidence, and the hypothesis board.
+const SUPPORT_LABELS: Record<EvidenceSupport, string> = {
+  "strongly-supported": "Strongly supported",
+  "moderately-supported": "Moderately supported",
+  "weakly-supported": "Weakly supported",
+  contradicted: "Contradicted",
+  "insufficient-evidence": "Insufficient evidence",
+};
+
+// Show a hypothesis as its identifier and label, so the assessment stays tied to the board.
+function formatHypothesis(board: HypothesisBoard, id: HypothesisId): string {
+  const entry = board.hypotheses.find((item) => item.hypothesis.id === id);
+  if (!entry) {
+    return id;
+  }
+  return `${entry.hypothesis.id} — ${entry.hypothesis.label}`;
+}
+
+// Print sources cited by the assessment. Titles and URLs were resolved against collected evidence.
+function printReferences(references: EvidenceReference[]) {
+  if (references.length === 0) {
+    console.log("     none");
+    return;
+  }
+
+  for (const reference of references) {
+    console.log(`     - ${reference.title}`);
+    console.log(`       URL: ${reference.url}`);
+  }
+}
+
+// Explain that reasoning was skipped because there is no collected evidence to assess.
+function printSkippedAssessment() {
+  console.log("Diagnostic assessment");
+  console.log("=====================\n");
+  console.log("No evidence was collected, so no diagnostic assessment was produced.");
+  console.log("The language model was not called.");
+  console.log("An assessment without collected sources would not be traceable to this research.");
+  console.log("Physical inspection and diagnostic testing are still required before any repair decision.\n");
+}
+
+// Print the validated assessment as a research finding, separate from the sources above it.
+function printDiagnosticAssessment(
+  board: HypothesisBoard,
+  assessment: DiagnosticAssessment,
+  providerName: string
+) {
+  console.log("Diagnostic assessment");
+  console.log("=====================\n");
+  console.log("This is a research-based assessment of the evidence collected above.");
+  console.log("It is not a confirmed diagnosis, and no hypothesis below is a proven cause.");
+  console.log("Physical inspection and diagnostic testing are still required.\n");
+  console.log(`Reasoning provider: ${providerName}\n`);
+
+  console.log("Hypothesis assessments:\n");
+  for (const item of assessment.hypothesisAssessments) {
+    console.log(formatHypothesis(board, item.hypothesisId));
+    console.log(`   Assessment: ${SUPPORT_LABELS[item.support]}`);
+    console.log(`   Explanation: ${item.explanation}`);
+    console.log("   Supporting evidence:");
+    printReferences(item.supportingEvidence);
+    console.log("   Contradicting evidence:");
+    printReferences(item.contradictingEvidence);
+    console.log("");
+  }
+
+  console.log("Conflicts:\n");
+  if (assessment.conflicts.length === 0) {
+    console.log("None recorded.\n");
+  } else {
+    for (const [index, conflict] of assessment.conflicts.entries()) {
+      console.log(`${index + 1}. ${conflict.description}`);
+      const affected = conflict.affectedHypotheses.map((id) => formatHypothesis(board, id));
+      console.log(`   Affected hypotheses: ${affected.length > 0 ? affected.join("; ") : "none named"}`);
+      console.log("   Sources:");
+      printReferences(conflict.references);
+      console.log("");
+    }
+  }
+
+  console.log("Unknowns:\n");
+  if (assessment.unknowns.length === 0) {
+    console.log("None recorded.\n");
+  } else {
+    for (const [index, unknown] of assessment.unknowns.entries()) {
+      console.log(`${index + 1}. ${unknown.question}`);
+      console.log(`   Why it matters: ${unknown.whyItMatters}\n`);
+    }
+  }
+
+  const nextTest = assessment.recommendedNextTest;
+  console.log("Recommended next test:\n");
+  console.log(nextTest.name);
+  console.log(`   Purpose: ${nextTest.purpose}`);
+  console.log("   Procedure:");
+  for (const [index, step] of nextTest.procedure.entries()) {
+    console.log(`     ${index + 1}. ${step}`);
+  }
+  const distinguished = nextTest.distinguishes.map((id) => formatHypothesis(board, id));
+  console.log(
+    `   Hypotheses this test may distinguish: ${distinguished.length > 0 ? distinguished.join("; ") : "none named"}`
+  );
+  console.log("");
+
+  console.log("Reasoning summary:\n");
+  console.log(assessment.reasoning);
+  console.log("");
+  console.log("Physical diagnostic testing is still required. This assessment does not confirm the fault.");
+}
+
+// Research the Mercedes demonstration case, then assess the collected evidence.
 async function main() {
   console.log("AutoTrace Research Agent");
   console.log("========================\n");
@@ -137,10 +253,33 @@ async function main() {
   printReport(result);
 
   console.log("");
-  printHypothesisBoard(buildHypothesisBoard(result.evidence));
+  const board = buildHypothesisBoard(result.evidence);
+  printHypothesisBoard(board);
+
+  if (result.evidence.length === 0) {
+    console.log("");
+    printSkippedAssessment();
+    return;
+  }
+
+  const request: ReasoningRequest = {
+    diagnosticCase,
+    board,
+    evidence: result.evidence,
+  };
+
+  const provider = createOllamaProvider();
+  console.log("");
+  console.log(`Requesting a diagnostic assessment from ${provider.name}.`);
+  console.log("The model receives only this case, the hypothesis board, and the evidence printed above.");
+  console.log("A local model may take several minutes.\n");
+
+  const assessment = await provider.reason(request);
+  printDiagnosticAssessment(board, assessment, provider.name);
 }
 
-main().catch((error) => {
-  console.error("AutoTrace failed:", error);
+main().catch((error: unknown) => {
+  const reason = error instanceof Error ? error.message : String(error);
+  console.error(`AutoTrace failed:\n${reason}`);
   process.exit(1);
 });
