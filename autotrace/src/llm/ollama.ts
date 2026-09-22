@@ -8,7 +8,7 @@ const DEFAULT_BASE_URL = "http://localhost:11434";
 const DEFAULT_MODEL = "qwen3:4b";
 
 // A local model on consumer hardware is slow rather than unresponsive, so the ceiling is generous.
-const REQUEST_TIMEOUT_MS = 600_000;
+const REQUEST_TIMEOUT_MS = 1_200_000;
 
 export type OllamaProviderOptions = {
   baseUrl?: string;
