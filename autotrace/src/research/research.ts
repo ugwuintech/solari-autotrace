@@ -36,6 +36,25 @@ export type ResearchResult = {
   rejections: CandidateRejection[];
 };
 
+/**
+ * Optional overrides for a research round.
+ * When queries is set and non-empty, those queries are used instead of buildResearchQueries().
+ */
+export type ResearchOptions = {
+  queries?: string[];
+};
+
+// Resolve the query list for one research round: targeted follow-up or default case queries.
+function resolveResearchQueries(
+  diagnosticCase: DiagnosticCase,
+  options?: ResearchOptions
+): string[] {
+  if (options?.queries !== undefined && options.queries.length > 0) {
+    return options.queries;
+  }
+  return buildResearchQueries(diagnosticCase);
+}
+
 // Extra DTC tokens for the page-text relevance gate.
 function extraRelevanceTerms(diagnosticCase: DiagnosticCase): string[] {
   return diagnosticCase.codes
@@ -59,8 +78,11 @@ function extractionRejections(
 }
 
 // Search with several queries, rank unique sources, visit a few, and extract evidence.
-export async function research(diagnosticCase: DiagnosticCase): Promise<ResearchResult> {
-  const queries = buildResearchQueries(diagnosticCase);
+export async function research(
+  diagnosticCase: DiagnosticCase,
+  options?: ResearchOptions
+): Promise<ResearchResult> {
+  const queries = resolveResearchQueries(diagnosticCase, options);
   const outcome = await search(queries);
   const batches = outcome.batches;
   const rawResults = batches.flatMap((batch) => batch.results);
