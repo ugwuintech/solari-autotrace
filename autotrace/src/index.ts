@@ -1,14 +1,17 @@
-import { createOllamaProvider } from "./llm/ollama.js";
-import { buildHypothesisBoard } from "./reasoning/hypotheses.js";
-import { research, type ResearchResult } from "./research/research.js";
+import {
+  runInvestigation,
+  type InvestigationResult,
+} from "./agent/investigate.js";
 import type { DiagnosticCase } from "./types/diagnosticCase.js";
+import type { Evidence } from "./types/evidence.js";
 import type { HypothesisBoard, HypothesisId } from "./types/hypothesis.js";
+import type { InvestigationState } from "./types/investigation.js";
 import type {
   DiagnosticAssessment,
   EvidenceReference,
   EvidenceSupport,
-  ReasoningRequest,
 } from "./types/reasoning.js";
+import type { ResearchObjective } from "./types/researchObjective.js";
 
 const diagnosticCase: DiagnosticCase = {
   vehicle: {
@@ -24,81 +27,33 @@ const diagnosticCase: DiagnosticCase = {
   symptoms: ["misfire cylinder 5"],
 };
 
-// Print queries, pipeline counts, visited sources, and extracted evidence.
-function printReport(result: ResearchResult) {
-  console.log("Queries executed:\n");
-  for (const [index, query] of result.queries.entries()) {
-    console.log(`${index + 1}. ${query}`);
+const SUPPORT_LABELS: Record<EvidenceSupport, string> = {
+  "strongly-supported": "Strongly supported",
+  "moderately-supported": "Moderately supported",
+  "weakly-supported": "Weakly supported",
+  contradicted: "Contradicted",
+  "insufficient-evidence": "Insufficient evidence",
+};
+
+// Show a hypothesis as its identifier and label, so the assessment stays tied to the board.
+function formatHypothesis(board: HypothesisBoard, id: HypothesisId): string {
+  const entry = board.hypotheses.find((item) => item.hypothesis.id === id);
+  if (!entry) {
+    return id;
   }
+  return `${entry.hypothesis.id} — ${entry.hypothesis.label}`;
+}
 
-  if (result.searchBlocks.length > 0) {
-    console.log("\nSearch engine blocks:\n");
-    for (const block of result.searchBlocks) {
-      console.log(`Query: ${block.query}`);
-      console.log(`Reason: ${block.reason}`);
-      console.log(`Page title: ${block.pageTitle}`);
-      console.log(`Page URL: ${block.pageUrl}`);
-    }
-  }
-
-  console.log(`\nSearch engine: ${result.searchEngine}`);
-  console.log(`Raw search results: ${result.rawResultCount}`);
-  console.log(`Unique candidates: ${result.uniqueCandidateCount}`);
-  console.log(`Ranked candidates: ${result.rankedCandidateCount}`);
-  console.log(`Candidates visited: ${result.candidatesVisited}`);
-  console.log(`Candidates rejected as irrelevant: ${result.candidatesRejectedAsIrrelevant}`);
-  console.log(`Evidence objects: ${result.evidence.length}\n`);
-
-  if (result.rankedCandidates.length > 0) {
-    console.log("Top ranked candidates:\n");
-    for (const [index, candidate] of result.rankedCandidates.entries()) {
-      console.log(`${index + 1}. [score ${candidate.score}] ${candidate.result.title}`);
-      console.log(`   URL: ${candidate.result.url}`);
-      console.log(`   Signals: ${candidate.signals.join(", ")}\n`);
-    }
-  }
-
-  if (result.visitedCandidates.length > 0) {
-    console.log("Visited candidates:\n");
-    for (const [index, candidate] of result.visitedCandidates.entries()) {
-      console.log(`${index + 1}. ${candidate.title}`);
-      console.log(`   URL: ${candidate.url}\n`);
-    }
-  } else if (result.uniqueCandidateCount > 0) {
-    console.log("No technically relevant candidates ranked high enough to visit.\n");
-    console.log("Unique candidates excluded before visit:\n");
-    for (const [index, evaluation] of result.candidateEvaluations.entries()) {
-      console.log(`${index + 1}. ${evaluation.result.title}`);
-      console.log(`   URL: ${evaluation.result.url}`);
-      if (evaluation.exclusionReason) {
-        console.log(`   Reason: ${evaluation.exclusionReason}\n`);
-      } else {
-        console.log("");
-      }
-    }
-  }
-
-  if (result.rejections.length > 0) {
-    console.log("Visited sources that produced no evidence:\n");
-    for (const [index, rejection] of result.rejections.entries()) {
-      console.log(`${index + 1}. ${rejection.title}`);
-      console.log(`   URL: ${rejection.url}`);
-      console.log(`   Reason: ${rejection.reason}\n`);
-    }
-  }
-
-  console.log("Evidence:\n");
-
-  if (result.evidence.length === 0) {
-    console.log("No usable evidence could be extracted from the source pages.");
+// Print sources cited by the assessment. Titles and URLs were resolved against collected evidence.
+function printReferences(references: EvidenceReference[]) {
+  if (references.length === 0) {
+    console.log("     none");
     return;
   }
 
-  for (const [index, item] of result.evidence.entries()) {
-    console.log(`${index + 1}. ${item.title}`);
-    console.log(`   URL: ${item.url}`);
-    console.log(`   Finding: ${item.finding}`);
-    console.log(`   Relevance: ${item.relevance}\n`);
+  for (const reference of references) {
+    console.log(`     - ${reference.title}`);
+    console.log(`       URL: ${reference.url}`);
   }
 }
 
@@ -135,33 +90,80 @@ function printHypothesisBoard(board: HypothesisBoard) {
   }
 }
 
-const SUPPORT_LABELS: Record<EvidenceSupport, string> = {
-  "strongly-supported": "Strongly supported",
-  "moderately-supported": "Moderately supported",
-  "weakly-supported": "Weakly supported",
-  contradicted: "Contradicted",
-  "insufficient-evidence": "Insufficient evidence",
-};
+// Print the collected evidence list for one investigation.
+function printEvidence(evidence: Evidence[]) {
+  console.log("Evidence:\n");
 
-// Show a hypothesis as its identifier and label, so the assessment stays tied to the board.
-function formatHypothesis(board: HypothesisBoard, id: HypothesisId): string {
-  const entry = board.hypotheses.find((item) => item.hypothesis.id === id);
-  if (!entry) {
-    return id;
-  }
-  return `${entry.hypothesis.id} — ${entry.hypothesis.label}`;
-}
-
-// Print sources cited by the assessment. Titles and URLs were resolved against collected evidence.
-function printReferences(references: EvidenceReference[]) {
-  if (references.length === 0) {
-    console.log("     none");
+  if (evidence.length === 0) {
+    console.log("No usable evidence could be extracted from the source pages.\n");
     return;
   }
 
-  for (const reference of references) {
-    console.log(`     - ${reference.title}`);
-    console.log(`       URL: ${reference.url}`);
+  for (const [index, item] of evidence.entries()) {
+    console.log(`${index + 1}. ${item.title}`);
+    console.log(`   URL: ${item.url}`);
+    console.log(`   Finding: ${item.finding}`);
+    console.log(`   Relevance: ${item.relevance}\n`);
+  }
+}
+
+// Print queries that research actually executed during the investigation.
+function printAttemptedQueries(queries: string[]) {
+  console.log("Queries executed:\n");
+  if (queries.length === 0) {
+    console.log("None recorded.\n");
+    return;
+  }
+
+  for (const [index, query] of queries.entries()) {
+    console.log(`${index + 1}. ${query}`);
+  }
+  console.log("");
+}
+
+// Print unresolved questions left after the latest assessment.
+function printUnresolvedQuestions(questions: string[]) {
+  console.log("Unresolved questions:\n");
+  if (questions.length === 0) {
+    console.log("None recorded.\n");
+    return;
+  }
+
+  for (const [index, question] of questions.entries()) {
+    console.log(`${index + 1}. ${question}`);
+  }
+  console.log("");
+}
+
+// Print follow-up research objectives when a second round was planned.
+function printFollowUpObjectives(objectives: ResearchObjective[]) {
+  if (objectives.length === 0) {
+    return;
+  }
+
+  console.log("Follow-up research objectives:\n");
+  for (const [index, objective] of objectives.entries()) {
+    console.log(`${index + 1}. ${objective.id}`);
+    console.log(`   Question: ${objective.question}`);
+    console.log(`   Rationale: ${objective.rationale}`);
+    if (objective.relatedHypotheses.length > 0) {
+      console.log(`   Related hypotheses: ${objective.relatedHypotheses.join(", ")}`);
+    }
+    console.log("");
+  }
+}
+
+// Print evidence newly discovered in the follow-up round, when any was found.
+function printNewFollowUpEvidence(evidence: Evidence[]) {
+  if (evidence.length === 0) {
+    return;
+  }
+
+  console.log("Newly discovered evidence (round 2):\n");
+  for (const [index, item] of evidence.entries()) {
+    console.log(`${index + 1}. ${item.title}`);
+    console.log(`   URL: ${item.url}`);
+    console.log(`   Finding: ${item.finding}\n`);
   }
 }
 
@@ -244,38 +246,56 @@ function printDiagnosticAssessment(
   console.log("Physical diagnostic testing is still required. This assessment does not confirm the fault.");
 }
 
-// Research the Mercedes demonstration case, then assess the collected evidence.
+// Print investigation status and round count after the bounded loop finishes.
+function printCompletion(state: InvestigationState) {
+  console.log("\nInvestigation complete");
+  console.log("======================\n");
+  console.log(`Status: ${state.status}`);
+  console.log(`Research rounds completed: ${state.researchRound}`);
+  console.log(`Evidence collected: ${state.evidence.length}`);
+  console.log(`Unresolved questions remaining: ${state.unresolvedQuestions.length}`);
+}
+
+// Print a full investigation result from the bounded orchestration loop.
+function printInvestigation(result: InvestigationResult) {
+  const { state } = result;
+
+  console.log(`Research rounds: ${state.researchRound}\n`);
+  printAttemptedQueries(state.attemptedQueries);
+  printEvidence(state.evidence);
+  printHypothesisBoard(state.hypothesisBoard);
+  printFollowUpObjectives(result.followUpObjectives);
+  printNewFollowUpEvidence(result.newEvidenceFromFollowUp);
+
+  if (result.followUpFailures.length > 0) {
+    console.log("Follow-up research failures:\n");
+    for (const [index, failure] of result.followUpFailures.entries()) {
+      console.log(`${index + 1}. ${failure.objective.id}`);
+      console.log(`   Query: ${failure.query}`);
+      console.log(`   Reason: ${failure.reason}\n`);
+    }
+  }
+
+  if (!state.assessment) {
+    printSkippedAssessment();
+  } else {
+    console.log("");
+    printDiagnosticAssessment(state.hypothesisBoard, state.assessment, result.providerName);
+    console.log("");
+    printUnresolvedQuestions(state.unresolvedQuestions);
+  }
+
+  printCompletion(state);
+}
+
+// Run the bounded two-round investigation for the Mercedes demonstration case.
 async function main() {
   console.log("AutoTrace Research Agent");
   console.log("========================\n");
+  console.log("Running a bounded investigation (maximum of two research rounds).\n");
 
-  const result = await research(diagnosticCase);
-  printReport(result);
-
-  console.log("");
-  const board = buildHypothesisBoard(result.evidence);
-  printHypothesisBoard(board);
-
-  if (result.evidence.length === 0) {
-    console.log("");
-    printSkippedAssessment();
-    return;
-  }
-
-  const request: ReasoningRequest = {
-    diagnosticCase,
-    board,
-    evidence: result.evidence,
-  };
-
-  const provider = createOllamaProvider();
-  console.log("");
-  console.log(`Requesting a diagnostic assessment from ${provider.name}.`);
-  console.log("The model receives only this case, the hypothesis board, and the evidence printed above.");
-  console.log("A local model may take several minutes.\n");
-
-  const assessment = await provider.reason(request);
-  printDiagnosticAssessment(board, assessment, provider.name);
+  const result = await runInvestigation(diagnosticCase);
+  printInvestigation(result);
 }
 
 main().catch((error: unknown) => {
