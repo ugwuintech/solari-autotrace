@@ -12,13 +12,22 @@ export type Hypothesis = {
 };
 
 /**
+ * How a mention relates to the hypothesis after deterministic polarity classification.
+ * "context" means the source discussed the system without establishing fault or clearance.
+ * "supports" and "contradicts" are reserved for findings that actually help or hurt the claim.
+ */
+export type MentionPolarity = "context" | "supports" | "contradicts";
+
+/**
  * Evidence whose text mentions the system a hypothesis is about, plus the terms that linked them.
- * A mention records only that a source discussed the system. It is not support for the hypothesis:
- * deciding whether evidence supports or contradicts a hypothesis belongs to evidence evaluation.
+ * A mention always records that a source discussed the system. Polarity then separates mere
+ * context from findings that support or contradict the hypothesis.
  */
 export type HypothesisMention = {
   evidence: Evidence;
   matchedTerms: string[];
+  polarity: MentionPolarity;
+  polarityReason: string;
 };
 
 // A hypothesis together with the evidence collected so far that mentions it.

@@ -7,6 +7,7 @@ import type {
   HypothesisMention,
 } from "../types/hypothesis.js";
 import type { TermGroup } from "../types/terms.js";
+import { classifyMentionPolarity } from "./evaluateEvidence.js";
 
 // A hypothesis plus the terms that link source text to it. The terms are matching rules, not claims.
 type HypothesisDefinition = Hypothesis & {
@@ -113,7 +114,7 @@ export function buildHypotheses(): Hypothesis[] {
   return HYPOTHESIS_DEFINITIONS.map(toHypothesis);
 }
 
-// Evidence whose title or finding mentions this hypothesis' system, with the matched terms kept.
+// Evidence whose title or finding mentions this hypothesis' system, with matched terms and polarity.
 function mentionsOf(definition: HypothesisDefinition, evidence: Evidence[]): HypothesisMention[] {
   const mentions: HypothesisMention[] = [];
 
@@ -121,7 +122,13 @@ function mentionsOf(definition: HypothesisDefinition, evidence: Evidence[]): Hyp
     const haystack = `${item.title} ${item.finding}`.toLowerCase();
     const matched = matchedTerms(haystack, definition.evidenceTerms);
     if (matched.length > 0) {
-      mentions.push({ evidence: item, matchedTerms: matched });
+      const classified = classifyMentionPolarity(haystack, matched);
+      mentions.push({
+        evidence: item,
+        matchedTerms: matched,
+        polarity: classified.polarity,
+        polarityReason: classified.reason,
+      });
     }
   }
 
@@ -131,8 +138,8 @@ function mentionsOf(definition: HypothesisDefinition, evidence: Evidence[]): Hyp
 /**
  * Attach collected evidence to every hypothesis whose system it mentions.
  * Matching is deterministic and term-based, so one source can mention several hypotheses and
- * evidence that mentions none is reported rather than dropped. This is evidence collection per
- * hypothesis, not evaluation: nothing here changes how plausible a hypothesis is.
+ * evidence that mentions none is reported rather than dropped. Each mention also receives a
+ * polarity classification (context / supports / contradicts); this is still not a final diagnosis.
  */
 export function buildHypothesisBoard(evidence: Evidence[]): HypothesisBoard {
   const hypotheses: HypothesisEvidence[] = HYPOTHESIS_DEFINITIONS.map((definition) => ({
