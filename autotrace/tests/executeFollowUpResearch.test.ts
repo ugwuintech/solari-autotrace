@@ -5,6 +5,7 @@ import {
   buildFollowUpQuery,
   collectNewEvidence,
   extractObjectiveFocus,
+  extractTechnicalFocusTerms,
   MAX_FOLLOW_UP_OBJECTIVES,
   normalizeResearchQuery,
   planFollowUpQueries,
@@ -41,6 +42,30 @@ function sampleObjective(
   };
 }
 
+// Ignition follow-up objective shaped like a live Round-2 unresolved question.
+function ignitionObjective(): ResearchObjective {
+  return sampleObjective({
+    id: "objective-ignition",
+    question:
+      "Find technical evidence relevant to Ignition-related misfire explanations of P0305, P2001, P0400 " +
+      "on the Mercedes-Benz C240 W203, especially evidence that helps address: " +
+      "Is the misfire due to a specific ignition component failure or a more complex system issue?",
+    relatedHypotheses: ["H1"],
+  });
+}
+
+// EGR/air-management follow-up objective shaped like a live Round-2 unresolved question.
+function egrObjective(): ResearchObjective {
+  return sampleObjective({
+    id: "objective-egr",
+    question:
+      "Find technical evidence relevant to Air-management/EGR-related problem explanations of P0305, P2001, P0400 " +
+      "on the Mercedes-Benz C240 W203, especially evidence that helps address: " +
+      "Are there any air-management or EGR-related issues contributing to the misfire?",
+    relatedHypotheses: ["H4"],
+  });
+}
+
 // Build a minimal evidence fixture for URL deduplication tests.
 function sampleEvidence(url: string, title = "Source"): Evidence {
   return {
@@ -52,14 +77,69 @@ function sampleEvidence(url: string, title = "Source"): Evidence {
 }
 
 describe("follow-up query construction", () => {
-  it("builds a vehicle-and-code-focused query from an objective", () => {
+  it("builds a vehicle-and-code-focused technical query from an objective", () => {
     const query = buildFollowUpQuery(diagnosticCase, sampleObjective());
     assert.match(query, /Mercedes-Benz C240 W203/);
     assert.match(query, /P0305/);
-    assert.match(query, /P2001/);
-    assert.match(query, /P0400/);
-    assert.match(query, /mechanical\/compression/i);
+    assert.match(query, /mechanical/i);
+    assert.match(query, /compression/i);
+    assert.match(query, /diagnostic/i);
+    assert.match(query, /test/i);
     assert.doesNotMatch(query, /^Find technical evidence/i);
+    assert.doesNotMatch(query, /Find technical evidence relevant to/i);
+  });
+
+  it("preserves vehicle context in follow-up queries", () => {
+    const query = buildFollowUpQuery(diagnosticCase, ignitionObjective());
+    assert.match(query, /Mercedes-Benz/);
+    assert.match(query, /C240/);
+    assert.match(query, /W203/);
+  });
+
+  it("keeps relevant DTC context without stuffing every case code", () => {
+    const ignitionQuery = buildFollowUpQuery(diagnosticCase, ignitionObjective());
+    const egrQuery = buildFollowUpQuery(diagnosticCase, egrObjective());
+
+    assert.match(ignitionQuery, /P0305/);
+    assert.doesNotMatch(ignitionQuery, /P0400/);
+    assert.doesNotMatch(ignitionQuery, /P2001/);
+
+    assert.match(egrQuery, /P0400|P2001/);
+    assert.match(egrQuery, /EGR|air-management/i);
+  });
+
+  it("does not copy the full natural-language unresolved question into the query", () => {
+    const unresolved =
+      "Is the misfire due to a specific ignition component failure or a more complex system issue?";
+    const query = buildFollowUpQuery(diagnosticCase, ignitionObjective());
+
+    assert.equal(query.includes(unresolved), false);
+    assert.doesNotMatch(query, /\bIs the misfire due to\b/);
+    assert.doesNotMatch(query, /\bmore complex system issue\b/);
+  });
+
+  it("incorporates diagnostic and test oriented terms", () => {
+    const query = buildFollowUpQuery(diagnosticCase, ignitionObjective());
+    assert.match(query, /\bdiagnostic\b/i);
+    assert.match(query, /\btest\b/i);
+  });
+
+  it("produces meaningfully different queries for different objectives", () => {
+    const ignitionQuery = buildFollowUpQuery(diagnosticCase, ignitionObjective());
+    const egrQuery = buildFollowUpQuery(diagnosticCase, egrObjective());
+
+    assert.notEqual(
+      normalizeResearchQuery(ignitionQuery),
+      normalizeResearchQuery(egrQuery)
+    );
+    assert.match(ignitionQuery, /ignition|coil|spark/i);
+    assert.match(egrQuery, /egr|air-management|vacuum/i);
+  });
+
+  it("extracts compact technical focus terms instead of question prose", () => {
+    const terms = extractTechnicalFocusTerms(ignitionObjective());
+    assert.ok(terms.some((term) => /ignition|coil|spark/i.test(term)));
+    assert.ok(!terms.some((term) => /specific|complex|failure|component/i.test(term)));
   });
 
   it("prefers the unresolved-question tail when present", () => {
@@ -93,11 +173,18 @@ describe("planFollowUpQueries", () => {
   });
 
   it("caps attempted objectives at MAX_FOLLOW_UP_OBJECTIVES", () => {
+    const focuses = [
+      "ignition coil spark plug",
+      "fuel injector pressure",
+      "compression valve mechanical",
+      "EGR vacuum intake",
+      "wiring connector ground",
+    ];
     const objectives = Array.from({ length: 5 }, (_, index) =>
       sampleObjective({
         id: `objective-${index + 1}`,
         question:
-          `Find technical evidence relevant to focus-${index + 1} causes of P0305 ` +
+          `Find technical evidence relevant to ${focuses[index]} causes of P0305 ` +
           "on the Mercedes C240 W203.",
       })
     );
