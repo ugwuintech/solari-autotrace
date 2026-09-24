@@ -289,11 +289,15 @@ function printInvestigation(result: InvestigationResult) {
   printCompletion(state);
 }
 
-// Run the bounded two-round investigation for the Mercedes demonstration case.
+/**
+ * CLI entry point for the hardcoded Mercedes demonstration case.
+ * The local tester UI (`npm run dev`) calls the same runInvestigation pipeline with form input.
+ */
 async function main() {
   console.log("AutoTrace Research Agent");
   console.log("========================\n");
   console.log("Running a bounded investigation (maximum of two research rounds).\n");
+  console.log("Tip: use `npm run dev` for the local tester UI with arbitrary cases.\n");
 
   const result = await runInvestigation(diagnosticCase);
   printInvestigation(result);

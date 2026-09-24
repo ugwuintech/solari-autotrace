@@ -1,0 +1,259 @@
+:root {
+  --bg: #f3efe6;
+  --ink: #1c1a16;
+  --muted: #5c564c;
+  --panel: #fffdf8;
+  --line: #d8d0c2;
+  --accent: #0f4c5c;
+  --accent-ink: #ffffff;
+  --supports: #1f6b3a;
+  --supports-bg: #e5f4ea;
+  --contradicts: #8a2f1f;
+  --contradicts-bg: #f8e8e4;
+  --context: #5c564c;
+  --context-bg: #eee9df;
+  --insufficient: #6b5a1f;
+  --insufficient-bg: #f4efd8;
+  --error: #8a2f1f;
+  --error-bg: #f8e8e4;
+  --shadow: 0 1px 0 rgba(28, 26, 22, 0.04);
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(15, 76, 92, 0.08), transparent 40%),
+    linear-gradient(180deg, #ebe4d6 0%, var(--bg) 40%, #e7e0d2 100%);
+  min-height: 100vh;
+}
+
+.page {
+  width: min(920px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2.5rem 0 4rem;
+}
+
+.header {
+  margin-bottom: 1.75rem;
+}
+
+.brand {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.header h1 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  line-height: 1.15;
+  font-weight: 650;
+}
+
+.lede {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 1.35rem 1.4rem 1.5rem;
+  margin-bottom: 1.15rem;
+}
+
+.panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+}
+
+.field {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+  line-height: 1.4;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 7rem;
+}
+
+input:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid rgba(15, 76, 92, 0.45);
+  outline-offset: 1px;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 650;
+  padding: 0.8rem 1.15rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.status-text {
+  margin: 0 0 0.5rem;
+  font-weight: 650;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.error-panel {
+  border-color: #e0b4ab;
+  background: var(--error-bg);
+}
+
+.error-title {
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  color: var(--error);
+}
+
+.error-detail {
+  margin: 0;
+  color: var(--ink);
+}
+
+.summary {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+  color: var(--muted);
+}
+
+.summary strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.block {
+  margin-bottom: 1.5rem;
+}
+
+.block h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.02rem;
+}
+
+.card {
+  border: 1px solid var(--line);
+  padding: 0.95rem 1rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+}
+
+.card h4 {
+  margin: 0 0 0.55rem;
+  font-size: 1rem;
+}
+
+.meta {
+  margin: 0 0 0.65rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.status-pill.supports,
+.status-pill.strongly-supported,
+.status-pill.moderately-supported,
+.status-pill.weakly-supported {
+  color: var(--supports);
+  background: var(--supports-bg);
+}
+
+.status-pill.contradicts,
+.status-pill.contradicted {
+  color: var(--contradicts);
+  background: var(--contradicts-bg);
+}
+
+.status-pill.context,
+.status-pill.insufficient-evidence,
+.status-pill.no-assessment {
+  color: var(--insufficient);
+  background: var(--insufficient-bg);
+}
+
+.list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.list li {
+  margin-bottom: 0.35rem;
+}
+
+.finding {
+  margin: 0.4rem 0;
+  line-height: 1.45;
+}
+
+a {
+  color: var(--accent);
+}
+
+.disclaimer {
+  margin: 1.25rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.empty {
+  color: var(--muted);
+  margin: 0;
+}
