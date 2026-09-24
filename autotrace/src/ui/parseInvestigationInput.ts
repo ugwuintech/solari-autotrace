@@ -35,9 +35,22 @@ function looksLikePlatform(token: string): boolean {
  * Handles common patterns such as "Mercedes-Benz C240 W203" and "Toyota Sienna 2008".
  */
 export function parseVehicleString(vehicleText: string): DiagnosticCase["vehicle"] {
-  const tokens = vehicleText.replace(/\s+/g, " ").trim().split(" ").filter((part) => part.length > 0);
+  let tokens = vehicleText.replace(/\s+/g, " ").trim().split(" ").filter((part) => part.length > 0);
   if (tokens.length === 0) {
     throw new InvestigationInputError("Vehicle is required.");
+  }
+
+  // Strip a leading model year before assigning make ("2014 Mercedes-Benz ...").
+  let year: number | undefined;
+  if (tokens.length > 0 && looksLikeYear(tokens[0]!)) {
+    year = Number(tokens[0]);
+    tokens = tokens.slice(1);
+  }
+
+  if (tokens.length === 0) {
+    throw new InvestigationInputError(
+      "Vehicle must include a model (for example: Mercedes-Benz C240 W203)."
+    );
   }
 
   let make = tokens[0]!;
@@ -51,19 +64,29 @@ export function parseVehicleString(vehicleText: string): DiagnosticCase["vehicle
     }
   }
 
-  let year: number | undefined;
   let platform: string | undefined;
   const modelTokens = [...rest];
 
+  // Trailing year: "Toyota Sienna 2008".
   if (modelTokens.length > 0 && looksLikeYear(modelTokens[modelTokens.length - 1]!)) {
     year = Number(modelTokens.pop());
   }
 
-  if (modelTokens.length > 0 && looksLikePlatform(modelTokens[modelTokens.length - 1]!)) {
+  // Year immediately before a platform code: "Mercedes-Benz 2014 W212".
+  if (
+    modelTokens.length >= 2 &&
+    looksLikeYear(modelTokens[modelTokens.length - 2]!) &&
+    looksLikePlatform(modelTokens[modelTokens.length - 1]!)
+  ) {
+    year = Number(modelTokens[modelTokens.length - 2]!);
+    platform = modelTokens[modelTokens.length - 1]!.toUpperCase();
+    modelTokens.splice(modelTokens.length - 2, 2);
+  } else if (modelTokens.length > 0 && looksLikePlatform(modelTokens[modelTokens.length - 1]!)) {
     platform = modelTokens.pop()!.toUpperCase();
   }
 
-  const model = modelTokens.join(" ").trim();
+  // When only a chassis code remains after year extraction, use it as the model.
+  const model = modelTokens.join(" ").trim() || platform || "";
   if (model.length === 0) {
     throw new InvestigationInputError(
       "Vehicle must include a model (for example: Mercedes-Benz C240 W203)."

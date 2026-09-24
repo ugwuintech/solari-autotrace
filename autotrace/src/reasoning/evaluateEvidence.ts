@@ -46,6 +46,10 @@ const ALL_CYLINDERS_PATTERN =
 const FAULT_ADJECTIVE_PATTERN =
   /\b(?:failed|bad|faulty|defective|dead|clogged|leaking|shorted|cracked|fouled|worn|broken|damaged)\b/;
 
+// Resolution words used after an intervention.
+const RESOLUTION_PATTERN =
+  /\b(?:fixed|resolved|cleared|gone|disappeared|no\s+longer\s+misfir)\b/;
+
 // True when the haystack reports normal, equal, or evenly ranged compression across cylinders.
 function hasNormalCompression(haystack: string): boolean {
   if (NORMAL_COMPRESSION_PATTERNS.some((pattern) => pattern.test(haystack))) {
@@ -74,12 +78,92 @@ function hasPersistence(haystack: string): boolean {
   return PERSISTENCE_PATTERNS.some((pattern) => pattern.test(haystack));
 }
 
-// True when any matched term is a compression-related measurement term.
+// True when any matched term is a compression or leak-down measurement term (not generic "leak").
 function hasCompressionTerm(matchedTerms: string[]): boolean {
   return matchedTerms.some((term) => {
     const lower = term.toLowerCase();
-    return lower.includes("compression") || lower.includes("leak");
+    return (
+      /\bcompression\b/.test(lower) ||
+      /\bleak[\s-]?down\b/.test(lower) ||
+      lower === "leakdown" ||
+      lower === "leak-down" ||
+      lower === "leak down"
+    );
   });
+}
+
+// Collect cylinder numbers mentioned in a span of text.
+function extractCylinderNumbers(text: string): number[] {
+  const found = new Set<number>();
+  const pattern = /\b(?:cylinders?|cyl\.?)\s*#?\s*(\d{1,2})(?:\s*(?:[-–—,/]|to|and|&)\s*(\d{1,2}))?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const first = Number(match[1]);
+    if (Number.isFinite(first)) {
+      found.add(first);
+    }
+    if (match[2]) {
+      const second = Number(match[2]);
+      if (Number.isFinite(second)) {
+        // Inclusive range when written as "cylinders 1-3".
+        if (/\d\s*(?:[-–—]|to)\s*\d/.test(match[0]) && second >= first) {
+          for (let cylinder = first; cylinder <= second; cylinder += 1) {
+            found.add(cylinder);
+          }
+        } else {
+          found.add(second);
+        }
+      }
+    }
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
+// True when the span describes compression across all / every cylinder (broad scope).
+function hasBroadCylinderScope(text: string): boolean {
+  return ALL_CYLINDERS_PATTERN.test(text);
+}
+
+/**
+ * True when a normal-compression statement and a low-compression statement refer to distinct
+ * cylinder scopes, so the normal reading must not erase the scoped low finding.
+ */
+function compressionScopesAreDistinct(haystack: string): boolean {
+  const lowMatch =
+    haystack.match(
+      /[^.!?;]*\b(?:(?:low|weak|no|poor|lower)\s+compression|compression\s+(?:was\s+|is\s+)?(?:significantly\s+)?(?:low|weak|poor|lower))[^.!?;]*/i
+    ) ?? null;
+  if (!lowMatch) {
+    return false;
+  }
+
+  const lowSpan = lowMatch[0] ?? "";
+  const lowCylinders = extractCylinderNumbers(lowSpan);
+  if (lowCylinders.length === 0) {
+    // Unscoped low compression is not a distinct-scope conflict with normal readings.
+    return false;
+  }
+
+  const normalMatch =
+    haystack.match(
+      /[^.!?;]*\b(?:compression\s+(?:was\s+|is\s+|were\s+)?(?:equal|normal|good|fine|ok|okay|even|similar|consistent|within\s+spec)|(?:equal|normal|good|even|similar|consistent)\s+compression)[^.!?;]*/i
+    ) ??
+    (COMPRESSION_RANGE_PATTERN.test(haystack) && ALL_CYLINDERS_PATTERN.test(haystack)
+      ? haystack.match(/[^.!?;]*\bcompression\b[^.!?;]*/i)
+      : null);
+
+  if (!normalMatch) {
+    return false;
+  }
+
+  const normalSpan = normalMatch[0] ?? "";
+  if (hasBroadCylinderScope(normalSpan) || extractCylinderNumbers(normalSpan).length === 0) {
+    // Broad or unscoped normal must not erase a scoped low-compression finding.
+    return true;
+  }
+
+  const normalCylinders = extractCylinderNumbers(normalSpan);
+  return !lowCylinders.some((cylinder) => normalCylinders.includes(cylinder));
 }
 
 // Split finding text on sentence boundaries so multi-finding reports can be judged per sentence.
@@ -97,8 +181,61 @@ function termsInClause(clause: string, matchedTerms: string[]): string[] {
 }
 
 /**
+ * True when a short window before matchIndex contains local negation (not / no / n't),
+ * excluding the intentional positive phrase "no longer".
+ */
+function hasLocalNegation(clause: string, matchIndex: number): boolean {
+  if (matchIndex <= 0) {
+    return false;
+  }
+
+  const windowStart = Math.max(0, matchIndex - 24);
+  const before = clause.slice(windowStart, matchIndex);
+  if (/\bno\s+longer\s+$/i.test(before)) {
+    return false;
+  }
+
+  return /(?:\b(?:not|no|never)\b|n['’]t)\s*$/i.test(before.trimEnd());
+}
+
+// Component words captured after "followed" / "moved with" style phrases.
+function componentAfterFollowPhrase(clause: string): string | null {
+  const patterns = [
+    /\b(?:misfire|code|fault)\s+followed\s+(?:the\s+)?([a-z0-9][a-z0-9\s-]{0,40}?)(?:\s+to\b|[.,;!]|$)/i,
+    /\b(?:misfire|code|fault)\s+moved\s+with\s+(?:the\s+)?([a-z0-9][a-z0-9\s-]{0,40}?)(?:\s+to\b|[.,;!]|$)/i,
+    /\bmoved\s+the\s+(?:misfire|code|fault)\s+with\s+(?:the\s+)?([a-z0-9][a-z0-9\s-]{0,40}?)(?:\s+to\b|[.,;!]|$)/i,
+    /\bfollowed\s+the\s+([a-z0-9][a-z0-9\s-]{0,40}?)(?:\s+to\b|[.,;!]|$)/i,
+    /\bmoved\s+with\s+the\s+([a-z0-9][a-z0-9\s-]{0,40}?)(?:\s+to\b|[.,;!]|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = clause.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+// True when the named follow/move component matches one of the hypothesis terms.
+function followComponentMatchesTerms(component: string, terms: string[]): boolean {
+  return terms.some((term) => {
+    const lower = term.toLowerCase();
+    return (
+      containsTerm(component, lower) ||
+      containsTerm(lower, component) ||
+      component === lower ||
+      component.includes(lower) ||
+      lower.includes(component)
+    );
+  });
+}
+
+/**
  * True when the clause reports that the misfire or code moved with / followed the component.
  * "Did not follow" is excluded here and handled as persistence instead.
+ * For followed / moved-with phrases, the named component must match a hypothesis term.
  */
 function isPositiveFollowFinding(clause: string, terms: string[]): boolean {
   if (terms.length === 0) {
@@ -109,8 +246,9 @@ function isPositiveFollowFinding(clause: string, terms: string[]): boolean {
     return false;
   }
 
-  if (/\b(?:misfire|code|fault)\s+(?:followed|moved\s+with)\b/.test(clause)) {
-    return true;
+  const followComponent = componentAfterFollowPhrase(clause);
+  if (followComponent !== null) {
+    return followComponentMatchesTerms(followComponent, terms);
   }
 
   // "misfire moved from cylinder 5 to cylinder 4 after swapping the coil"
@@ -118,18 +256,10 @@ function isPositiveFollowFinding(clause: string, terms: string[]): boolean {
     return true;
   }
 
-  if (/\bmoved\s+the\s+(?:misfire|code|fault)\s+with\b/.test(clause)) {
-    return true;
-  }
-
-  if (/\bfollowed\s+the\b/.test(clause) || /\bmoved\s+with\s+the\b/.test(clause)) {
-    return true;
-  }
-
   return false;
 }
 
-// True when a fault adjective sits near a matched system term in the clause.
+// True when a fault adjective sits near a matched system term and is not locally negated.
 function hasFaultAdjectiveNearTerm(clause: string, terms: string[]): boolean {
   if (!FAULT_ADJECTIVE_PATTERN.test(clause)) {
     return false;
@@ -138,11 +268,21 @@ function hasFaultAdjectiveNearTerm(clause: string, terms: string[]): boolean {
   for (const term of terms) {
     const escaped = term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nearFault = new RegExp(
-      `(?:${FAULT_ADJECTIVE_PATTERN.source}\\s+(?:[a-z0-9]+\\s+){0,3}${escaped})|(?:${escaped}\\s+(?:[a-z0-9]+\\s+){0,3}${FAULT_ADJECTIVE_PATTERN.source})`
+      `(?:${FAULT_ADJECTIVE_PATTERN.source}\\s+(?:[a-z0-9]+\\s+){0,3}${escaped})|(?:${escaped}\\s+(?:[a-z0-9]+\\s+){0,3}${FAULT_ADJECTIVE_PATTERN.source})`,
+      "i"
     );
-    if (nearFault.test(clause)) {
-      return true;
+    const match = nearFault.exec(clause);
+    if (!match || match.index === undefined) {
+      continue;
     }
+
+    const adjectiveMatch = FAULT_ADJECTIVE_PATTERN.exec(match[0].toLowerCase());
+    const adjectiveOffset = adjectiveMatch?.index ?? 0;
+    if (hasLocalNegation(clause, match.index + adjectiveOffset)) {
+      continue;
+    }
+
+    return true;
   }
 
   return false;
@@ -184,13 +324,22 @@ function isAbnormalMeasurementFinding(clause: string, terms: string[]): boolean 
   return false;
 }
 
-// True when replacing/swapping the matched term resolved the fault.
+// True when replacing/swapping the matched term resolved the fault (without local negation).
 function isResolvedAfterIntervention(clause: string, terms: string[]): boolean {
   if (!hasIntervention(clause) || terms.length === 0) {
     return false;
   }
 
-  return /\b(?:fixed|resolved|cleared|gone|disappeared|no\s+longer\s+misfir)\b/.test(clause);
+  const match = RESOLUTION_PATTERN.exec(clause);
+  if (!match || match.index === undefined) {
+    return false;
+  }
+
+  if (hasLocalNegation(clause, match.index)) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -255,15 +404,18 @@ export function classifyMentionPolarity(
     return { polarity: "context", reason: "no matched system terms" };
   }
 
-  // Normal/equal compression weakens mechanical hypotheses whenever compression terms matched.
-  if (hasNormalCompression(haystack) && hasCompressionTerm(matchedTerms)) {
+  // Normal/equal compression weakens mechanical hypotheses when scopes are not distinct from a low finding.
+  if (
+    hasNormalCompression(haystack) &&
+    hasCompressionTerm(matchedTerms) &&
+    !compressionScopesAreDistinct(haystack)
+  ) {
     return {
       polarity: "contradicts",
       reason: "normal or equal compression finding for this system",
     };
   }
 
-  const persistence = hasPersistence(haystack);
   const clauses = splitClauses(haystack);
   let support: MentionPolarityResult | null = null;
 
@@ -280,8 +432,8 @@ export function classifyMentionPolarity(
       return positive;
     }
 
-    // Term appears in a clause that records an intervention, and the finding says the fault remained.
-    if (hasIntervention(clause) && persistence) {
+    // Persistence applies only when it appears in the same clause as this intervention.
+    if (hasIntervention(clause) && hasPersistence(clause)) {
       return {
         polarity: "contradicts",
         reason: "prior intervention or check on this system left the problem unchanged",

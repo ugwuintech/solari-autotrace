@@ -133,7 +133,7 @@ export async function research(
       uniqueCandidateCount: uniqueCandidates.length,
       rankedCandidateCount: ranked.length,
       candidatesVisited: visitedCandidates.length,
-      candidatesRejectedAsIrrelevant: rejections.length,
+      candidatesRejectedAsIrrelevant: extracted.rejections.length,
       rankedCandidates,
       visitedCandidates,
       candidateEvaluations,

@@ -61,6 +61,8 @@ export type InvestigationResult = {
   followUpFailures: FollowUpResearchFailure[];
   providerName: string;
   reasoningCalls: number;
+  /** Present when round-2 reassessment failed; round-1 assessment and board are retained. */
+  reassessmentError?: string;
 };
 
 // Start an empty investigation ready for the first research round.
@@ -105,6 +107,7 @@ function finish(
     followUpFailures?: FollowUpResearchFailure[];
     providerName: string;
     reasoningCalls: number;
+    reassessmentError?: string;
   }
 ): InvestigationResult {
   return {
@@ -114,6 +117,9 @@ function finish(
     followUpFailures: extras.followUpFailures ?? [],
     providerName: extras.providerName,
     reasoningCalls: extras.reasoningCalls,
+    ...(extras.reassessmentError !== undefined
+      ? { reassessmentError: extras.reassessmentError }
+      : {}),
   };
 }
 
@@ -232,6 +238,7 @@ export async function runInvestigation(
     });
   }
 
+  const board1 = state.hypothesisBoard;
   const board2 = buildHypothesisBoard(combinedEvidence);
   state = {
     ...state,
@@ -239,25 +246,45 @@ export async function runInvestigation(
     status: "assessing",
   };
 
-  const assessment2 = await provider.reason({
-    diagnosticCase,
-    board: board2,
-    evidence: combinedEvidence,
-  });
-  reasoningCalls += 1;
+  try {
+    const assessment2 = await provider.reason({
+      diagnosticCase,
+      board: board2,
+      evidence: combinedEvidence,
+    });
+    reasoningCalls += 1;
 
-  // Replace assessment and unresolved queue; stop even if unknowns remain.
-  state = {
-    ...state,
-    assessment: assessment2,
-    unresolvedQuestions: unresolvedFromAssessment(assessment2),
-  };
+    // Replace assessment and unresolved queue; stop even if unknowns remain.
+    state = {
+      ...state,
+      assessment: assessment2,
+      unresolvedQuestions: unresolvedFromAssessment(assessment2),
+    };
 
-  return finish(state, {
-    followUpObjectives: objectives,
-    newEvidenceFromFollowUp: followUp.newEvidence,
-    followUpFailures: followUp.failures,
-    providerName: provider.name,
-    reasoningCalls,
-  });
+    return finish(state, {
+      followUpObjectives: objectives,
+      newEvidenceFromFollowUp: followUp.newEvidence,
+      followUpFailures: followUp.failures,
+      providerName: provider.name,
+      reasoningCalls,
+    });
+  } catch (error: unknown) {
+    // Round-2 reassessment failed: keep the successful round-1 assessment and board.
+    const reason = error instanceof Error ? error.message : String(error);
+    state = {
+      ...state,
+      hypothesisBoard: board1,
+      assessment: assessment1,
+      unresolvedQuestions: unresolved1,
+    };
+
+    return finish(state, {
+      followUpObjectives: objectives,
+      newEvidenceFromFollowUp: followUp.newEvidence,
+      followUpFailures: followUp.failures,
+      providerName: provider.name,
+      reasoningCalls,
+      reassessmentError: reason,
+    });
+  }
 }

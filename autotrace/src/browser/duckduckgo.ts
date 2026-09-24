@@ -200,11 +200,31 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
 
     for (const query of queries) {
       console.log(`Searching DuckDuckGo: ${query}`);
-      const outcome = await searchOneQuery(page, query);
+      let outcome: QueryOutcome;
+      try {
+        outcome = await searchOneQuery(page, query);
+      } catch (error: unknown) {
+        // Navigation/search failure for one query: record as a block and stop remaining queries.
+        const reason = error instanceof Error ? error.message : String(error);
+        outcome = {
+          results: [],
+          blockReason: `DuckDuckGo search navigation failed for this query: ${reason}`,
+        };
+      }
       batches.push({ query, results: outcome.results });
 
       if (outcome.blockReason) {
-        const block = await describeBlock(page, query, outcome.blockReason);
+        let block: SearchBlock;
+        try {
+          block = await describeBlock(page, query, outcome.blockReason);
+        } catch {
+          block = {
+            query,
+            reason: outcome.blockReason,
+            pageTitle: "",
+            pageUrl: "",
+          };
+        }
         blocks.push(block);
         console.log(`DuckDuckGo blocked this session: ${block.reason}`);
         console.log("Stopping search; remaining queries were not run.\n");

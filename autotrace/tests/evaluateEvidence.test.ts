@@ -176,6 +176,105 @@ describe("classifyMentionPolarity", () => {
 
     assert.equal(result.polarity, "context");
   });
+
+  it("preserves scoped low compression when normal compression covers other cylinders", () => {
+    const result = classifyMentionPolarity(
+      "Compression was normal on cylinders 1-3. Cylinder 4 has low compression.",
+      ["compression"]
+    );
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /low or weak compression/i);
+  });
+
+  it("does not let a broad normal compression reading erase scoped low compression", () => {
+    const result = classifyMentionPolarity(
+      "Compression was normal on all cylinders, but cylinder 5 showed low compression.",
+      ["compression"]
+    );
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /low or weak compression/i);
+  });
+
+  it("applies persistence only to the intervention clause it belongs to", () => {
+    const text =
+      "Swapped the coil and the misfire remained. Later the injector was replaced.";
+
+    const coil = classifyMentionPolarity(text, ["coil"]);
+    const injector = classifyMentionPolarity(text, ["injector"]);
+
+    assert.equal(coil.polarity, "contradicts");
+    assert.match(coil.reason, /intervention|unchanged/i);
+    assert.equal(injector.polarity, "context");
+  });
+
+  it("still contradicts when persistence follows the same-clause intervention", () => {
+    const result = classifyMentionPolarity(
+      "Swapped the coil and the misfire remained.",
+      ["coil"]
+    );
+
+    assert.equal(result.polarity, "contradicts");
+    assert.match(result.reason, /intervention|unchanged/i);
+  });
+
+  it("does not treat a vacuum leak statement as compression evidence", () => {
+    const result = classifyMentionPolarity(
+      "Found a vacuum leak near the intake. Compression was normal on all cylinders.",
+      ["vacuum leak"]
+    );
+
+    assert.notEqual(result.polarity, "contradicts");
+    assert.equal(/normal or equal compression/i.test(result.reason), false);
+  });
+
+  it("does not treat negated fault adjectives as supporting", () => {
+    const result = classifyMentionPolarity("the coil is not bad", ["coil"]);
+
+    assert.equal(result.polarity, "context");
+  });
+
+  it("still treats a positive fault adjective as supporting", () => {
+    const result = classifyMentionPolarity("the coil is bad", ["coil"]);
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /fault/i);
+  });
+
+  it("does not treat a negated resolution as supporting", () => {
+    const result = classifyMentionPolarity(
+      "Replaced the coil but not fixed the misfire",
+      ["coil"]
+    );
+
+    assert.notEqual(result.polarity, "supports");
+  });
+
+  it("still treats a positive resolution after intervention as supporting", () => {
+    const result = classifyMentionPolarity(
+      "Replaced the coil and that fixed the misfire",
+      ["coil"]
+    );
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /resolved after intervening/i);
+  });
+
+  it("supports follow findings only when the named component matches", () => {
+    const matching = classifyMentionPolarity(
+      "The misfire followed the coil to cylinder 1.",
+      ["coil"]
+    );
+    const unrelated = classifyMentionPolarity(
+      "The misfire followed the injector; the coil pack was also discussed.",
+      ["coil"]
+    );
+
+    assert.equal(matching.polarity, "supports");
+    assert.match(matching.reason, /followed or moved/i);
+    assert.equal(unrelated.polarity, "context");
+  });
 });
 
 describe("buildHypothesisBoard polarity", () => {

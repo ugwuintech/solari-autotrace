@@ -8,11 +8,11 @@
     "dev": "tsx --env-file=.env src/ui/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "node --import tsx --test tests/parseAssessment.test.ts tests/planFollowUpResearch.test.ts tests/executeFollowUpResearch.test.ts tests/runInvestigation.test.ts tests/evaluateEvidence.test.ts tests/parseInvestigationInput.test.ts tests/investigateFromUiInput.test.ts"
+    "test": "node --import tsx --test tests/parseAssessment.test.ts tests/planFollowUpResearch.test.ts tests/executeFollowUpResearch.test.ts tests/runInvestigation.test.ts tests/evaluateEvidence.test.ts tests/parseInvestigationInput.test.ts tests/investigateFromUiInput.test.ts tests/queries.test.ts tests/prompt.test.ts"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@solarisdk/browser": "^0.1.2",

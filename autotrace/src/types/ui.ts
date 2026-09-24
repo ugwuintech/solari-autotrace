@@ -73,6 +73,8 @@ export type InvestigationUiResult = {
   recommendedNextTest: UiRecommendedTest | null;
   reasoning: string | null;
   disclaimer: string;
+  /** Present when round-2 reassessment failed; round-1 assessment was retained. */
+  reassessmentError?: string;
 };
 
 // Structured validation or investigation failure returned to the tester UI.

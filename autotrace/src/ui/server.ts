@@ -202,7 +202,7 @@ async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
   const server = createUiServer();
 
-  server.listen(port, () => {
+  server.listen(port, "127.0.0.1", () => {
     console.log("AutoTrace tester UI");
     console.log("===================");
     console.log(`Open http://localhost:${port} in your browser.`);

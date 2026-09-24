@@ -649,4 +649,61 @@ describe("runInvestigation", () => {
     assert.equal(provider.calls.length, 1);
     assert.ok(result.state.assessment);
   });
+
+  it("keeps the round-1 assessment and board when reassessment fails", async () => {
+    const round1Assessment = sampleAssessment([
+      {
+        question: "Whether compression testing has been performed on cylinder 5",
+        whyItMatters: "Mechanical causes remain open.",
+      },
+    ]);
+    const objective = sampleObjective();
+    const round1Evidence = [sampleEvidence("https://example.com/a")];
+    const round1Board = buildHypothesisBoard(round1Evidence);
+    let reasonCalls = 0;
+
+    const provider: LlmProvider = {
+      name: "reassessment-failing-provider",
+      async reason(): Promise<DiagnosticAssessment> {
+        reasonCalls += 1;
+        if (reasonCalls === 1) {
+          return round1Assessment;
+        }
+        throw new Error("AutoTrace reasoning failed: reassessment unavailable");
+      },
+    };
+
+    const result = await runInvestigation(diagnosticCase, {
+      research: async () => ({
+        queries: ["q1"],
+        evidence: round1Evidence,
+      }),
+      provider,
+      planFollowUpResearch: () => [objective],
+      executeFollowUpResearch: async () => ({
+        attemptedObjectives: [objective],
+        executedQueries: ["follow-up-query"],
+        skippedQueries: [],
+        newEvidence: [sampleEvidence("https://example.com/b")],
+        failures: [],
+      }),
+    });
+
+    assert.equal(result.state.status, "complete");
+    assert.equal(reasonCalls, 2);
+    assert.equal(result.reasoningCalls, 1);
+    assert.equal(result.state.assessment, round1Assessment);
+    assert.deepEqual(
+      result.state.hypothesisBoard.hypotheses.map((entry) => entry.hypothesis.id),
+      round1Board.hypotheses.map((entry) => entry.hypothesis.id)
+    );
+    assert.equal(
+      result.state.hypothesisBoard.hypotheses[0]?.mentions.length,
+      round1Board.hypotheses[0]?.mentions.length
+    );
+    assert.match(
+      result.reassessmentError ?? "",
+      /AutoTrace reasoning failed: reassessment unavailable/
+    );
+  });
 });
