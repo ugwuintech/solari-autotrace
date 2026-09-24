@@ -13,14 +13,17 @@ export type MentionPolarityResult = {
 
 // Verbs that record a prior diagnostic action on a named component or system.
 const INTERVENTION_PATTERN =
-  /\b(?:swapped|replaced|tested|checked|inspected|cleaned|ruled\s+out|was\s+moved|were\s+moved)\b/;
+  /\b(?:swapped|swapping|replaced|replacing|changed|changing|tested|checked|inspected|cleaned|ruled\s+out|moved|was\s+moved|were\s+moved)\b/;
 
 // Phrases that say the fault remained after an intervention or check.
 const PERSISTENCE_PATTERNS: RegExp[] = [
   /\bno\s+change\b/,
-  /\bstill\s+(?:has\s+)?(?:p\d{4}|misfire|code|codes)\b/,
+  /\bno\s+luck\b/,
+  /\bstill\s+(?:(?:has|have|getting|seeing|showing)\s+)?(?:the\s+)?(?:p\d{4}|misfire|code|codes|problem|fault)\b/,
+  /\b(?:misfire|problem|code|fault|p\d{4})\s+remains?\b/,
   /\b(?:misfire|problem|code|fault)\s+remained\b/,
   /\bdid\s+not\s+follow\b/,
+  /\bmisfires?\s+did\s+not\s+follow\b/,
   /\bcontinued\s+(?:to\s+)?(?:misfire|misfiring)\b/,
   /\bdid\s+not\s+(?:resolve|clear|fix|go\s+away)\b/,
   /\bsame\s+(?:code|misfire|problem)\b/,
@@ -28,22 +31,42 @@ const PERSISTENCE_PATTERNS: RegExp[] = [
 
 // Compression measured normal/equal — a negative finding for a mechanical hypothesis.
 const NORMAL_COMPRESSION_PATTERNS: RegExp[] = [
-  /\bcompression\s+(?:was\s+|is\s+|were\s+)?(?:equal|normal|good|fine|ok|okay|even|within\s+spec)\b/,
-  /\b(?:equal|normal|good|even)\s+compression\b/,
+  /\bcompression\s+(?:was\s+|is\s+|were\s+)?(?:equal|normal|good|fine|ok|okay|even|similar|consistent|within\s+spec)\b/,
+  /\b(?:equal|normal|good|even|similar|consistent)\s+compression\b/,
 ];
+
+// Numeric psi-style ranges such as "175-190" or "175 to 190".
+const COMPRESSION_RANGE_PATTERN = /\b\d{2,3}\s*(?:[-–—/]|to)\s*\d{2,3}\b/;
+
+// Phrases that say the reported values apply across cylinders.
+const ALL_CYLINDERS_PATTERN =
+  /\b(?:every|all|each)\s+cylinders?\b|\bacross\s+(?:all\s+)?(?:the\s+)?cylinders?\b/;
 
 // Fault adjectives that, next to a matched system term, count as supporting findings.
 const FAULT_ADJECTIVE_PATTERN =
-  /\b(?:failed|bad|faulty|defective|dead|clogged|leaking|shorted|cracked|fouled|worn|broken)\b/;
+  /\b(?:failed|bad|faulty|defective|dead|clogged|leaking|shorted|cracked|fouled|worn|broken|damaged)\b/;
 
-// True when the haystack reports normal or equal compression.
+// True when the haystack reports normal, equal, or evenly ranged compression across cylinders.
 function hasNormalCompression(haystack: string): boolean {
-  return NORMAL_COMPRESSION_PATTERNS.some((pattern) => pattern.test(haystack));
+  if (NORMAL_COMPRESSION_PATTERNS.some((pattern) => pattern.test(haystack))) {
+    return true;
+  }
+
+  // Numeric ranges such as "compression (175-190 every cylinder)" imply even results.
+  return (
+    /\bcompression\b/.test(haystack) &&
+    COMPRESSION_RANGE_PATTERN.test(haystack) &&
+    ALL_CYLINDERS_PATTERN.test(haystack)
+  );
 }
 
 // True when the haystack records a diagnostic intervention on some component.
+// Fault-relocation phrases such as "misfire moved from ..." are not component interventions.
 function hasIntervention(haystack: string): boolean {
-  return INTERVENTION_PATTERN.test(haystack);
+  const withoutFaultMoves = haystack
+    .replace(/\b(?:misfire|code|fault)\s+moved\b/g, " ")
+    .replace(/\bmoved\s+(?:the\s+)?(?:misfire|code|fault)\b/g, " ");
+  return INTERVENTION_PATTERN.test(withoutFaultMoves);
 }
 
 // True when the haystack says the problem remained after prior work.
@@ -78,20 +101,29 @@ function termsInClause(clause: string, matchedTerms: string[]): string[] {
  * "Did not follow" is excluded here and handled as persistence instead.
  */
 function isPositiveFollowFinding(clause: string, terms: string[]): boolean {
-  if (/\bdid\s+not\s+follow\b/.test(clause)) {
+  if (terms.length === 0) {
+    return false;
+  }
+
+  if (/\bdid\s+not\s+follow\b/.test(clause) || /\bno\s+luck\b/.test(clause)) {
     return false;
   }
 
   if (/\b(?:misfire|code|fault)\s+(?:followed|moved\s+with)\b/.test(clause)) {
-    return terms.length > 0;
+    return true;
+  }
+
+  // "misfire moved from cylinder 5 to cylinder 4 after swapping the coil"
+  if (/\b(?:misfire|code|fault)\s+moved\s+from\b/.test(clause)) {
+    return true;
   }
 
   if (/\bmoved\s+the\s+(?:misfire|code|fault)\s+with\b/.test(clause)) {
-    return terms.length > 0;
+    return true;
   }
 
   if (/\bfollowed\s+the\b/.test(clause) || /\bmoved\s+with\s+the\b/.test(clause)) {
-    return terms.length > 0;
+    return true;
   }
 
   return false;
@@ -116,16 +148,40 @@ function hasFaultAdjectiveNearTerm(clause: string, terms: string[]): boolean {
   return false;
 }
 
-// True when the clause reports low, weak, or absent compression for a compression term.
+// True when the clause reports low, weak, lower, or absent compression for a compression term.
 function isLowCompressionFinding(clause: string, terms: string[]): boolean {
   if (!hasCompressionTerm(terms)) {
     return false;
   }
 
   return (
-    /\b(?:low|weak|no|poor)\s+compression\b/.test(clause) ||
-    /\bcompression\s+(?:was\s+|is\s+)?(?:low|weak|poor)\b/.test(clause)
+    /\b(?:low|weak|no|poor|lower)\s+compression\b/.test(clause) ||
+    /\bcompression\s+(?:was\s+|is\s+)?(?:significantly\s+)?(?:low|weak|poor|lower)\b/.test(clause)
   );
+}
+
+/**
+ * True when the clause reports a low/restricted flow or pressure finding, or a value below spec,
+ * for a matched system term (e.g. injector flow was low, EGR flow below specification).
+ */
+function isAbnormalMeasurementFinding(clause: string, terms: string[]): boolean {
+  if (terms.length === 0) {
+    return false;
+  }
+
+  if (/\b(?:flow|pressure)\s+(?:was\s+|is\s+)?(?:low|restricted|weak|poor)\b/.test(clause)) {
+    return true;
+  }
+
+  if (/\b(?:low|restricted|weak|poor)\s+(?:injector\s+|fuel\s+|egr\s+)?(?:flow|pressure)\b/.test(clause)) {
+    return true;
+  }
+
+  if (/\b(?:was\s+|is\s+)?below\s+(?:specification|spec)\b/.test(clause)) {
+    return true;
+  }
+
+  return false;
 }
 
 // True when replacing/swapping the matched term resolved the fault.
@@ -157,6 +213,13 @@ function classifyPositiveClause(clause: string, terms: string[]): MentionPolarit
     return {
       polarity: "supports",
       reason: "low or weak compression finding for this system",
+    };
+  }
+
+  if (isAbnormalMeasurementFinding(clause, terms)) {
+    return {
+      polarity: "supports",
+      reason: "abnormal measurement or below-spec finding for this system",
     };
   }
 
@@ -210,6 +273,13 @@ export function classifyMentionPolarity(
       continue;
     }
 
+    const positive = classifyPositiveClause(clause, terms);
+
+    // A clear follow/move finding supports the hypothesis even when an intervention verb is present.
+    if (positive !== null && positive.reason.startsWith("fault followed")) {
+      return positive;
+    }
+
     // Term appears in a clause that records an intervention, and the finding says the fault remained.
     if (hasIntervention(clause) && persistence) {
       return {
@@ -218,7 +288,6 @@ export function classifyMentionPolarity(
       };
     }
 
-    const positive = classifyPositiveClause(clause, terms);
     if (positive !== null && support === null) {
       support = positive;
     }

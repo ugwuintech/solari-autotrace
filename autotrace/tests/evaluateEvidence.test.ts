@@ -65,6 +65,117 @@ describe("classifyMentionPolarity", () => {
     assert.equal(ignition.polarity, "contradicts");
     assert.equal(egr.polarity, "context");
   });
+
+  it("treats ignition intervention with persistent P0305 as contradicting", () => {
+    const result = classifyMentionPolarity(
+      "I have swapped all ignition components with no luck of misfires to follow and still getting P0305.",
+      ["ignition"]
+    );
+
+    assert.equal(result.polarity, "contradicts");
+    assert.match(result.reason, /intervention|unchanged/i);
+  });
+
+  it("treats injector intervention with persistent P0305 as contradicting", () => {
+    const result = classifyMentionPolarity(
+      "I swapped the fuel injector and am still getting P0305.",
+      ["injector", "fuel injector"]
+    );
+
+    assert.equal(result.polarity, "contradicts");
+    assert.match(result.reason, /intervention|unchanged/i);
+  });
+
+  it("treats spark plug and coil swap with persistent misfire as contradicting", () => {
+    const result = classifyMentionPolarity(
+      "I replaced the spark plugs, moved the coil and plug wires, and still have the misfire.",
+      ["spark plug", "coil", "plug wires"]
+    );
+
+    assert.equal(result.polarity, "contradicts");
+    assert.match(result.reason, /intervention|unchanged/i);
+  });
+
+  it("treats even compression readings across cylinders as contradicting", () => {
+    const result = classifyMentionPolarity(
+      "I have checked compression (175-190 every cylinder).",
+      ["compression"]
+    );
+
+    assert.equal(result.polarity, "contradicts");
+    assert.match(result.reason, /normal or equal compression/i);
+  });
+
+  it("treats general coil discussion as contextual", () => {
+    const result = classifyMentionPolarity("coils are expensive on this engine", ["coil"]);
+
+    assert.equal(result.polarity, "context");
+  });
+
+  it("treats general injector discussion as contextual", () => {
+    const result = classifyMentionPolarity(
+      "I suspect the injector might be worth looking at later",
+      ["injector"]
+    );
+
+    assert.equal(result.polarity, "context");
+  });
+
+  it("treats replaced EGR without an outcome as contextual", () => {
+    const result = classifyMentionPolarity("replaced EGR valve", ["egr"]);
+
+    assert.equal(result.polarity, "context");
+  });
+
+  it("treats replaced EGR with persistent P0400 as contradicting", () => {
+    const result = classifyMentionPolarity(
+      "replaced EGR valve and P0400 remains",
+      ["egr"]
+    );
+
+    assert.equal(result.polarity, "contradicts");
+    assert.match(result.reason, /intervention|unchanged/i);
+  });
+
+  it("treats misfire moving after a coil swap as supporting", () => {
+    const result = classifyMentionPolarity(
+      "misfire moved from cylinder 5 to cylinder 4 after swapping the coil",
+      ["coil"]
+    );
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /followed or moved/i);
+  });
+
+  it("treats low compression on the affected cylinder as supporting", () => {
+    const result = classifyMentionPolarity(
+      "cylinder 5 compression was significantly lower",
+      ["compression"]
+    );
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /low or weak compression/i);
+  });
+
+  it("treats a positive injector finding as supporting", () => {
+    const result = classifyMentionPolarity("injector flow was low on cylinder 5", ["injector"]);
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /abnormal measurement|below-spec|fault/i);
+  });
+
+  it("treats a damaged wiring finding as supporting", () => {
+    const result = classifyMentionPolarity("found damaged wiring near the harness", ["wiring"]);
+
+    assert.equal(result.polarity, "supports");
+    assert.match(result.reason, /fault/i);
+  });
+
+  it("treats a general wiring mention as contextual", () => {
+    const result = classifyMentionPolarity("checked the wiring on the harness", ["wiring"]);
+
+    assert.equal(result.polarity, "context");
+  });
 });
 
 describe("buildHypothesisBoard polarity", () => {
@@ -131,5 +242,26 @@ describe("buildHypothesisBoard polarity", () => {
         assert.ok(mention.polarityReason.length > 0);
       }
     }
+  });
+
+  it("marks ignition and fuel as contradicted when both were swapped without the misfire following", () => {
+    const board = buildHypothesisBoard([
+      evidence(
+        "I have swapped all ignition components and fuel injector with no luck of misfires to follow.",
+        "https://example.test/live-swap"
+      ),
+    ]);
+
+    const h1 = board.hypotheses.find((entry) => entry.hypothesis.id === "H1");
+    const h2 = board.hypotheses.find((entry) => entry.hypothesis.id === "H2");
+    assert.ok(h1);
+    assert.ok(h2);
+
+    const ignition = h1.mentions.find((m) => m.evidence.url === "https://example.test/live-swap");
+    const fuel = h2.mentions.find((m) => m.evidence.url === "https://example.test/live-swap");
+    assert.ok(ignition);
+    assert.ok(fuel);
+    assert.equal(ignition.polarity, "contradicts");
+    assert.equal(fuel.polarity, "contradicts");
   });
 });
