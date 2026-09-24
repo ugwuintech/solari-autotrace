@@ -29,15 +29,19 @@ export function buildResearchQueries(diagnosticCase: DiagnosticCase): string[] {
   const chassis = platformOrModel(diagnosticCase);
   const codes = diagnosticCase.codes.map((item) => item.code).filter((code) => code.length > 0);
   const primaryCode = codes[0];
-  const symptoms = (diagnosticCase.symptoms ?? []).join(" ").trim();
+  const firstSymptom = (diagnosticCase.symptoms ?? [])
+    .map((symptom) => symptom.replace(/\s+/g, " ").trim())
+    .find((symptom) => symptom.length > 0);
 
   const queries: string[] = [];
 
   if (primaryCode) {
-    const symptomPart = symptoms ? ` ${symptoms}` : "";
+    const symptomPart = firstSymptom ? ` ${firstSymptom}` : "";
     queries.push(`${make} ${model} ${chassis} ${primaryCode}${symptomPart}`);
     queries.push(`${make} ${chassis} ${primaryCode} diagnostic forum`);
-    queries.push(`${primaryCode} ${chassis} misfire site:mbworld.org`);
+    if (firstSymptom) {
+      queries.push(`${firstSymptom} ${primaryCode} ${chassis}`);
+    }
   }
 
   if (codes.length > 1) {

@@ -66,6 +66,24 @@ describe("parseInvestigationInput", () => {
     });
   });
 
+  it("strips a leading model year before assigning make", () => {
+    assert.deepEqual(parseVehicleString("2014 Mercedes-Benz C240 W203"), {
+      make: "Mercedes-Benz",
+      model: "C240",
+      platform: "W203",
+      year: 2014,
+    });
+  });
+
+  it("recognizes a year immediately before a platform code", () => {
+    assert.deepEqual(parseVehicleString("Mercedes-Benz 2014 W212"), {
+      make: "Mercedes-Benz",
+      model: "W212",
+      platform: "W212",
+      year: 2014,
+    });
+  });
+
   it("parses diagnostic codes from mixed separators", () => {
     assert.deepEqual(
       parseDiagnosticCodes("p0305; P0400  p2001, P0305").map((item) => item.code),
