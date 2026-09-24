@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoTrace — Research Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <p class="brand">AutoTrace</p>
+        <h1>Research Agent</h1>
+        <p class="lede">
+          Research automotive diagnostic codes, compare competing hypotheses,
+          and generate an evidence-based diagnostic assessment.
+        </p>
+      </header>
+
+      <section class="panel" aria-labelledby="form-heading">
+        <h2 id="form-heading">Investigation</h2>
+        <form id="investigation-form" novalidate>
+          <label class="field">
+            <span>Vehicle</span>
+            <input
+              id="vehicle"
+              name="vehicle"
+              type="text"
+              autocomplete="off"
+              placeholder="Mercedes-Benz C240 W203"
+              required
+            />
+          </label>
+
+          <label class="field">
+            <span>Diagnostic codes</span>
+            <input
+              id="codes"
+              name="codes"
+              type="text"
+              autocomplete="off"
+              placeholder="P0305, P2001, P0400"
+              required
+            />
+          </label>
+
+          <label class="field">
+            <span>Symptoms / additional context</span>
+            <textarea
+              id="symptoms"
+              name="symptoms"
+              rows="5"
+              placeholder="Cylinder 5 misfire. Previous ignition and injector swaps did not move the misfire."
+            ></textarea>
+          </label>
+
+          <button id="submit-button" type="submit">Run Investigation</button>
+        </form>
+      </section>
+
+      <section id="status-panel" class="panel status-panel" hidden>
+        <h2>Investigation progress</h2>
+        <p id="status-text" class="status-text">Researching...</p>
+        <p class="hint">
+          The agent is running the live research pipeline. This can take several minutes.
+        </p>
+      </section>
+
+      <section id="error-panel" class="panel error-panel" hidden>
+        <h2>Investigation failed</h2>
+        <p id="error-title" class="error-title"></p>
+        <p id="error-detail" class="error-detail"></p>
+      </section>
+
+      <section id="result-panel" class="panel result-panel" hidden>
+        <h2>Investigation complete</h2>
+        <div id="summary" class="summary"></div>
+        <div id="hypotheses"></div>
+        <div id="evidence"></div>
+        <div id="unknowns"></div>
+        <div id="next-test"></div>
+        <div id="reasoning"></div>
+        <p id="disclaimer" class="disclaimer"></p>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
