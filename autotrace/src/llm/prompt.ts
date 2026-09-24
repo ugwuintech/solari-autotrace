@@ -25,7 +25,13 @@ const SYSTEM_PROMPT = [
   "9. Recommend a next test that would separate the competing hypotheses whenever the evidence permits one.",
   "10. The scanner code descriptions are case input reported by whoever supplied the case. Treat them as claims about the vehicle, not as independently verified facts.",
   "11. No hypothesis is a confirmed cause. Describe what the evidence shows, not what the fault is.",
-  "12. Reply with a single JSON object matching the required schema. No prose, no explanation outside the JSON, no markdown, no code fences.",
+  "12. Mentions are labelled with a polarity. Treat them as follows:",
+  "    - context: the source discusses the system but does not establish whether it is faulty. Never put context mentions in supportingEvidence or contradictingEvidence.",
+  "    - supports: the source reports a finding that actually supports the hypothesis. Only these may go in supportingEvidence.",
+  "    - contradicts: the source reports a failed prior intervention, a negative diagnostic result, or a finding inconsistent with the hypothesis. Put these in contradictingEvidence, never in supportingEvidence.",
+  "13. A source that merely names a component (coil, injector, wiring, and so on) is not supporting evidence for that hypothesis.",
+  "14. Polarity labels are assigned deterministically by AutoTrace before you see them. Treat polarity=contradicts as contradictingEvidence for that hypothesis, and polarity=supports as supportingEvidence. Do not reclassify a contradicts or supports mention as mere context because the wording seems ambiguous to you.",
+  "15. Reply with a single JSON object matching the required schema. No prose, no explanation outside the JSON, no markdown, no code fences.",
 ].join("\n");
 
 // Short labels (E1, E2, ...) so the hypothesis board can point at evidence without repeating URLs.
@@ -63,12 +69,17 @@ function formatCase(diagnosticCase: DiagnosticCase): string {
   return lines.join("\n");
 }
 
-// The competing hypotheses, plus which evidence merely mentioned each system.
+// The competing hypotheses, with each mention labelled by polarity (context / supports / contradicts).
 function formatHypotheses(board: HypothesisBoard, labels: Map<string, string>): string {
   const lines: string[] = [
     "COMPETING HYPOTHESES (possible causes under investigation, none confirmed)",
     "",
-    "A mention below only records that a source discussed that system. A mention is not support.",
+    "Each mention below includes a polarity assigned from the finding text:",
+    "- context: discussed the system only; not support and not contradiction",
+    "- supports: a finding that actually supports this hypothesis",
+    "- contradicts: a failed intervention, negative test, or inconsistent finding for this hypothesis",
+    "Do not place context or contradicts mentions in supportingEvidence.",
+    "Do not place context mentions in contradictingEvidence. Mentions labelled polarity=contradicts must appear in contradictingEvidence for that hypothesis.",
     "",
   ];
 
@@ -83,7 +94,7 @@ function formatHypotheses(board: HypothesisBoard, labels: Map<string, string>): 
     } else {
       const mentioned = mentions.map((mention) => {
         const label = labels.get(mention.evidence.url) ?? mention.evidence.url;
-        return `${label} (matched terms: ${mention.matchedTerms.join(", ")})`;
+        return `${label} [polarity=${mention.polarity}; ${mention.polarityReason}] (matched terms: ${mention.matchedTerms.join(", ")})`;
       });
       lines.push(`  Evidence mentioning this system: ${mentioned.join("; ")}`);
     }
@@ -134,8 +145,8 @@ function formatOutputContract(board: HypothesisBoard): string {
     "    hypothesisId: the hypothesis identifier",
     "    support: one of \"strongly-supported\", \"moderately-supported\", \"weakly-supported\", \"contradicted\", \"insufficient-evidence\"",
     "    explanation: why the supplied evidence leads to that judgement, separating evidence from your inference",
-    "    supportingEvidence: array of { title, url } copied exactly from the evidence list above, or []",
-    "    contradictingEvidence: array of { title, url } copied exactly from the evidence list above, or []",
+    "    supportingEvidence: array of { title, url } from evidence items whose polarity for this hypothesis is supports, or []. Never include context or contradicts mentions.",
+    "    contradictingEvidence: array of { title, url } from evidence items whose polarity for this hypothesis is contradicts, or []. Never include context or supports mentions.",
     "  conflicts: array of disagreements between supplied sources, each with description, references ({ title, url }), and affectedHypotheses. Use [] if the sources do not disagree.",
     "  unknowns: array of questions the supplied evidence cannot answer, each with question and whyItMatters.",
     "  recommendedNextTest: a single test with name, purpose, procedure (ordered steps), and distinguishes (the hypotheses its result would separate).",

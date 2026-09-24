@@ -72,11 +72,12 @@ function printHypothesisBoard(board: HypothesisBoard) {
       continue;
     }
 
-    console.log(`   Evidence mentioning this system: ${mentions.length} (not yet evaluated as support)`);
+    console.log(`   Evidence mentioning this system: ${mentions.length}`);
     for (const mention of mentions) {
       console.log(`     - ${mention.evidence.title}`);
       console.log(`       URL: ${mention.evidence.url}`);
       console.log(`       Matched terms: ${mention.matchedTerms.join(", ")}`);
+      console.log(`       Polarity: ${mention.polarity} (${mention.polarityReason})`);
     }
     console.log("");
   }
