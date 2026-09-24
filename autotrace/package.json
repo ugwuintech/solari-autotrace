@@ -1,0 +1,26 @@
+{
+  "name": "autotrace",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsx --env-file=.env src/index.ts",
+    "dev": "tsx --env-file=.env src/ui/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "node --import tsx --test tests/parseAssessment.test.ts tests/planFollowUpResearch.test.ts tests/executeFollowUpResearch.test.ts tests/runInvestigation.test.ts tests/evaluateEvidence.test.ts tests/parseInvestigationInput.test.ts tests/investigateFromUiInput.test.ts tests/queries.test.ts tests/prompt.test.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@solarisdk/browser": "^0.1.2",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
