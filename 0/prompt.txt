@@ -1,0 +1,315 @@
+<pasted_content id="ae2b">
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.entire.io/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Installation
+
+> Install, update, verify, and uninstall the Entire CLI.
+
+## System Requirements
+
+* macOS, Linux, or Windows
+* Git 2.25 or later
+* Bash, Zsh, Fish, or PowerShell
+* Windows PowerShell 5.1 or later, for the Windows PowerShell installer
+
+Building from source requires Go 1.26.6 or later.
+
+## Release Channels
+
+Entire ships two release channels:
+
+* `stable`: the default channel for Homebrew, Scoop, `install.sh`, and `install.ps1`
+* `nightly`: prerelease builds available through Homebrew, `install.sh`, and `install.ps1`
+
+Scoop supports the stable channel only. For a nightly install on Windows, use `install.ps1`.
+
+## Install and Update Entire
+
+Choose one installation method. Use the update command in the same tab when you want a newer release.
+
+<Tabs>
+  <Tab title="macOS with Homebrew">
+    Install the stable channel:
+
+    ```bash theme={null}
+    brew install --cask entireio/tap/entire
+    ```
+
+    Or install the nightly channel:
+
+    ```bash theme={null}
+    brew install --cask entireio/tap/entire@nightly
+    ```
+
+    The fully qualified cask name adds the `entireio/tap` tap for you, so no separate `brew tap` step is needed.
+
+    Update the channel you installed:
+
+    ```bash theme={null}
+    brew upgrade --cask entireio/tap/entire
+    ```
+
+    ```bash theme={null}
+    brew upgrade --cask entireio/tap/entire@nightly
+    ```
+  </Tab>
+
+  <Tab title="Linux Install Script">
+    Install the stable channel:
+
+    ```bash theme={null}
+    curl -fsSL https://entire.io/install.sh | bash
+    ```
+
+    Or install the nightly channel:
+
+    ```bash theme={null}
+    curl -fsSL https://entire.io/install.sh | bash -s -- --channel nightly
+    ```
+
+    The script installs `entire` and `git-remote-entire` in `~/.local/bin`. If that directory is missing from your `PATH`, the script prints the command that adds it to your shell configuration.
+
+    Run the command for your channel again to update Entire.
+  </Tab>
+
+  <Tab title="Linux Direct Download">
+    Download the stable AMD64 archive and install both executables:
+
+    ```bash theme={null}
+    download_dir="$(mktemp -d)"
+    mkdir -p "$HOME/.local/bin"
+    curl -fsSL https://github.com/entireio/cli/releases/latest/download/entire_linux_amd64.tar.gz \
+      -o "$download_dir/entire_linux_amd64.tar.gz"
+    tar -xzf "$download_dir/entire_linux_amd64.tar.gz" -C "$download_dir"
+    install -m 0755 "$download_dir/entire" "$download_dir/git-remote-entire" "$HOME/.local/bin/"
+    rm -rf "$download_dir"
+    ```
+
+    For ARM64, replace `amd64` with `arm64` in the archive name:
+
+    ```bash theme={null}
+    download_dir="$(mktemp -d)"
+    mkdir -p "$HOME/.local/bin"
+    curl -fsSL https://github.com/entireio/cli/releases/latest/download/entire_linux_arm64.tar.gz \
+      -o "$download_dir/entire_linux_arm64.tar.gz"
+    tar -xzf "$download_dir/entire_linux_arm64.tar.gz" -C "$download_dir"
+    install -m 0755 "$download_dir/entire" "$download_dir/git-remote-entire" "$HOME/.local/bin/"
+    rm -rf "$download_dir"
+    ```
+
+    Run the block for your architecture again to update Entire.
+  </Tab>
+
+  <Tab title="Windows with PowerShell">
+    Install the stable channel from Windows PowerShell 5.1 or later:
+
+    ```powershell theme={null}
+    irm https://entire.io/install.ps1 | iex
+    ```
+
+    Or install the nightly channel:
+
+    ```powershell theme={null}
+    iex "& {$(irm https://entire.io/install.ps1)} -Channel nightly"
+    ```
+
+    For the stable channel, the script uses Scoop when Scoop is on your `PATH`, and it adds the Entire bucket first. Without Scoop, and for every nightly install, the script verifies the release checksum, installs `entire.exe` and `git-remote-entire.exe` in `%USERPROFILE%\.local\bin`, and adds that directory to your user `PATH`. Restart your terminal after the script changes your `PATH`.
+
+    The script accepts these options. Pass them with the script block form shown for the nightly channel, because `irm | iex` cannot forward arguments:
+
+    | Option | Effect |
+    | - | - |
+    | `-Channel` | Release channel to install, `stable` or `nightly`. Defaults to `stable`. |
+    | `-InstallDir` | Destination for a checksum verified install. Defaults to `$HOME\.local\bin`. Passing it selects the release archive even when Scoop is available. |
+    | `-NoPathUpdate` | Leave your user `PATH` unchanged. Applies to release archive installs, because Scoop manages its own `PATH` entry. |
+    | `-Help` | Print the usage message. |
+
+    <Note>
+      In Git Bash, MSYS, or Cygwin, `install.sh` stops and points you to this installer.
+    </Note>
+
+    Run the command for your channel again to update Entire.
+  </Tab>
+
+  <Tab title="Windows with Scoop">
+    These commands drive Scoop directly. The PowerShell installer already uses Scoop for stable installs when Scoop is available.
+
+    Add the Entire bucket once, then install the stable channel:
+
+    ```powershell theme={null}
+    scoop bucket add entire https://github.com/entireio/scoop-bucket.git
+    scoop install entire/entire
+    ```
+
+    Update Scoop and Entire:
+
+    ```powershell theme={null}
+    scoop update
+    scoop update entire
+    ```
+
+    <Note>
+      Use `entire/entire` for new installations. Scoop previously used `entire/cli`.
+    </Note>
+  </Tab>
+
+  <Tab title="Build from Source">
+    Install both executables:
+
+    ```bash theme={null}
+    go install github.com/entireio/cli/cmd/entire@latest
+    go install github.com/entireio/cli/cmd/git-remote-entire@latest
+    ```
+
+    Go writes them to `$(go env GOPATH)/bin`. Add that directory to your `PATH` if your shell cannot find `entire`.
+
+    Run both commands again to update the source installation.
+  </Tab>
+</Tabs>
+
+## Verify the Installation
+
+Run:
+
+```bash theme={null}
+entire version
+```
+
+Entire CLI 0.10.5 prints three lines. The Go version and platform reflect the release and system you installed:
+
+```text theme={null}
+Entire CLI 0.10.5
+Go version: go1.26.6
+OS/Arch: darwin/arm64
+```
+
+Release archives also include `git-remote-entire`. Git invokes this helper when a remote uses an `entire://` URL. Verify that your shell can find both executables:
+
+<Tabs>
+  <Tab title="macOS or Linux">
+    ```bash theme={null}
+    command -v entire
+    command -v git-remote-entire
+    ```
+  </Tab>
+
+  <Tab title="Windows">
+    ```powershell theme={null}
+    Get-Command entire
+    Get-Command git-remote-entire
+    ```
+  </Tab>
+</Tabs>
+
+## Installation and Data Locations
+
+The executable location depends on the installation method:
+
+| Method | Location |
+| - | - |
+| Homebrew | The Homebrew prefix returned by `brew --prefix` |
+| Linux install script or direct download | `~/.local/bin` |
+| Windows PowerShell script without Scoop | `%USERPROFILE%\.local\bin`, or the `-InstallDir` you passed |
+| Scoop | The directory returned by `scoop prefix entire` |
+| Go | `$(go env GOPATH)/bin` |
+
+Entire stores repository settings in `.entire/settings.json` and personal repository overrides in `.entire/settings.local.json`. See [Local, Project, and Global Settings](/guides/configuration/settings-layers) for those files.
+
+The CLI also uses these directories for each user:
+
+| Data | Default | Override |
+| - | - | - |
+| Login contexts, update state, and file based credentials | `~/.config/entire` | `ENTIRE_CONFIG_DIR` |
+| Discovery caches | `~/.cache/entire` | `XDG_CACHE_HOME`, with `/entire` appended |
+| Managed CLI plugins on macOS and Linux | `~/.local/share/entire/plugins` | `ENTIRE_PLUGIN_DIR`, or `XDG_DATA_HOME` with `/entire/plugins` appended |
+
+`XDG_CONFIG_HOME` does not change the Entire config directory. Set `ENTIRE_CONFIG_DIR` when you need a different location.
+
+## Control Update Prompts
+
+Set this variable in scripts, CI, or other environments where the CLI should not prompt for an update:
+
+```bash theme={null}
+ENTIRE_NO_AUTO_UPDATE=1
+```
+
+## Shell Completion
+
+Entire generates shell completion scripts for Bash, Zsh, Fish, and PowerShell with [`entire completion`](/cli-reference/completion). The steps below cover Bash and Zsh.
+
+<Tabs>
+  <Tab title="Bash">
+    Add this command to `~/.bashrc`:
+
+    ```bash theme={null}
+    source <(entire completion bash)
+    ```
+  </Tab>
+
+  <Tab title="Zsh">
+    Add this command to `~/.zshrc`:
+
+    ```bash theme={null}
+    source <(entire completion zsh)
+    ```
+  </Tab>
+</Tabs>
+
+## Uninstall Entire
+
+Use the command that matches your installation method.
+
+<Tabs>
+  <Tab title="Homebrew">
+    Stable:
+
+    ```bash theme={null}
+    brew uninstall --cask entireio/tap/entire
+    ```
+
+    Nightly:
+
+    ```bash theme={null}
+    brew uninstall --cask entireio/tap/entire@nightly
+    ```
+  </Tab>
+
+  <Tab title="Linux Install Script or Direct Download">
+    ```bash theme={null}
+    rm -f "$HOME/.local/bin/entire" "$HOME/.local/bin/git-remote-entire"
+    ```
+  </Tab>
+
+  <Tab title="Windows PowerShell Script">
+    Remove both executables from the directory you installed them in:
+
+    ```powershell theme={null}
+    Remove-Item "$HOME\.local\bin\entire.exe", "$HOME\.local\bin\git-remote-entire.exe"
+    ```
+
+    The user `PATH` entry for that directory remains. Remove it if you no longer need the directory. If the script used Scoop, follow the Scoop tab instead.
+  </Tab>
+
+  <Tab title="Scoop">
+    ```powershell theme={null}
+    scoop uninstall entire
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    ```bash theme={null}
+    rm -f "$(go env GOPATH)/bin/entire" "$(go env GOPATH)/bin/git-remote-entire"
+    ```
+  </Tab>
+</Tabs>
+
+Uninstalling the executables does not remove repository settings, checkpoints, or user data. Inspect the paths under [Installation and Data Locations](#installation-and-data-locations) before removing data you no longer need.
+
+## Review Recent Changes
+
+Read the [Entire CLI changelog](https://github.com/entireio/cli/blob/main/CHANGELOG.md) for changes in each release.
+
+Continue to the [Quickstart](/quickstart) to capture your first checkpoint.
+</pasted_content id="ae2b">
