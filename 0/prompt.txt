@@ -1,0 +1,1 @@
+great its working, now i want you to give me a prompt to give tothe next agent that will handle the next task telling it all what youve just done
