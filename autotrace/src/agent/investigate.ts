@@ -1,5 +1,6 @@
 import { span } from "neatlogs";
 import { createProviderFromEnv } from "../llm/selectProvider.js";
+import { reportProgress } from "../observability/progress.js";
 import type { LlmProvider } from "../llm/provider.js";
 import { buildHypothesisBoard } from "../reasoning/hypotheses.js";
 import { planFollowUpResearch } from "../reasoning/planFollowUpResearch.js";
@@ -16,7 +17,9 @@ import type {
   FollowUpResearchFailure,
   FollowUpResearchResult,
 } from "../types/followUpResearch.js";
+import type { HypothesisBoard } from "../types/hypothesis.js";
 import type { InvestigationState } from "../types/investigation.js";
+import type { DiagnosticAssessment } from "../types/reasoning.js";
 import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
 import type { ResearchObjective } from "../types/researchObjective.js";
 
@@ -114,6 +117,33 @@ function combineEvidence(existing: Evidence[], incoming: Evidence[]): Evidence[]
   return [...existing, ...collectNewEvidence(incoming, existing)];
 }
 
+// Report the rebuilt hypothesis board as polarity totals, so the feed shows what the evidence says.
+function reportBoard(board: HypothesisBoard, evidenceCount: number): void {
+  const mentions = board.hypotheses.flatMap((entry) => entry.mentions);
+  const count = (polarity: string) => mentions.filter((mention) => mention.polarity === polarity).length;
+  reportProgress(
+    "hypotheses",
+    `Hypothesis board updated from ${evidenceCount} evidence item(s)`,
+    `${count("supports")} supporting, ${count("contradicts")} contradicting, ${count("context")} context mention(s)`
+  );
+}
+
+function reportReasoningStart(providerName: string, board: HypothesisBoard, evidenceCount: number): void {
+  reportProgress(
+    "reasoning",
+    `Asking ${providerName} to weigh ${board.hypotheses.length} hypotheses against ${evidenceCount} evidence item(s)`
+  );
+}
+
+// Report a validated assessment as each hypothesis's qualitative support label.
+function reportAssessment(assessment: DiagnosticAssessment): void {
+  reportProgress(
+    "reasoning",
+    `Assessment validated against the collected evidence; ${assessment.unknowns.length} open question(s)`,
+    assessment.hypothesisAssessments.map((item) => `${item.hypothesisId}: ${item.support}`).join(", ")
+  );
+}
+
 // Build a finished result that preserves the current state and optional follow-up metadata.
 function finish(
   state: InvestigationState,
@@ -156,8 +186,13 @@ export async function runInvestigation(
   const recoveries: RecoveryEvent[] = [];
   const result = await runBoundedInvestigation(diagnosticCase, dependencies, (event) => {
     console.log(`Recovered from a failed ${event.step} step: ${event.action}\n`);
+    reportProgress("recovery", `Recovered a failed ${event.step} step: ${event.action}`, event.failure);
     recoveries.push(event);
   });
+  reportProgress(
+    "complete",
+    `Investigation complete: ${result.state.evidence.length} evidence item(s) over ${result.state.researchRound} round(s)`
+  );
   return { ...result, recoveries };
 }
 
@@ -184,6 +219,7 @@ async function runBoundedInvestigation(
   let reasoningCalls = 0;
 
   // --- Round 1: initial research ---
+  reportProgress("research", "Round 1: researching the case");
   const round1 = await runResearch(diagnosticCase);
   state = {
     ...state,
@@ -192,8 +228,10 @@ async function runBoundedInvestigation(
     researchRound: 1,
     hypothesisBoard: tracedHypothesisBoard(round1.evidence),
   };
+  reportBoard(state.hypothesisBoard, state.evidence.length);
 
   if (state.evidence.length === 0) {
+    reportProgress("research", "No evidence was collected, so the model assessment is skipped");
     return finish(state, {
       providerName: provider.name,
       reasoningCalls,
@@ -201,12 +239,14 @@ async function runBoundedInvestigation(
   }
 
   state = { ...state, status: "assessing" };
+  reportReasoningStart(provider.name, state.hypothesisBoard, state.evidence.length);
   const assessment1 = await provider.reason({
     diagnosticCase,
     board: state.hypothesisBoard,
     evidence: state.evidence,
   });
   reasoningCalls += 1;
+  reportAssessment(assessment1);
 
   const unresolved1 = unresolvedFromAssessment(assessment1);
   state = {
@@ -241,6 +281,11 @@ async function runBoundedInvestigation(
     });
   }
 
+  reportProgress(
+    "follow-up",
+    `Round 2: researching ${objectives.length} open question(s)`,
+    objectives.map((objective) => objective.question).join("\n")
+  );
   const followUp = await executeFollowUp(
     diagnosticCase,
     objectives,
@@ -264,6 +309,8 @@ async function runBoundedInvestigation(
     researchRound: 2,
   };
 
+  reportProgress("follow-up", `Follow-up research found ${followUp.newEvidence.length} new evidence item(s)`);
+
   // No new evidence: keep the round-1 assessment and unresolved questions; do not call Qwen again.
   if (followUp.newEvidence.length === 0) {
     return finish(state, {
@@ -282,14 +329,17 @@ async function runBoundedInvestigation(
     hypothesisBoard: board2,
     status: "assessing",
   };
+  reportBoard(board2, combinedEvidence.length);
 
   try {
+    reportReasoningStart(provider.name, board2, combinedEvidence.length);
     const assessment2 = await provider.reason({
       diagnosticCase,
       board: board2,
       evidence: combinedEvidence,
     });
     reasoningCalls += 1;
+    reportAssessment(assessment2);
 
     // Replace assessment and unresolved queue; stop even if unknowns remain.
     state = {
@@ -308,6 +358,7 @@ async function runBoundedInvestigation(
   } catch (error: unknown) {
     // Round-2 reassessment failed: keep the successful round-1 assessment and board.
     const reason = error instanceof Error ? error.message : String(error);
+    reportProgress("reasoning", "Reassessment failed, so the round-1 assessment is kept", reason);
     state = {
       ...state,
       hypothesisBoard: board1,

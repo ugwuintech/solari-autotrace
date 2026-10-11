@@ -1,5 +1,6 @@
 import { Solari, type LaunchOptions } from "@solarisdk/browser";
 import type { Page } from "patchright-core";
+import { reportProgress } from "../observability/progress.js";
 import { launchBrowser } from "./launch.js";
 import type { RecoveryEvent } from "../types/recovery.js";
 import type { SearchBlock, SearchOutcome, SearchQueryResults, SearchResult } from "../types/search.js";
@@ -208,6 +209,7 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
 
     for (const query of queries) {
       console.log(`Searching DuckDuckGo: ${query}`);
+      reportProgress("search", `Searching: ${query}`);
       let outcome: QueryOutcome;
       try {
         outcome = await searchOneQuery(page, query);
@@ -216,6 +218,7 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
         // query is retried once in a fresh tab. A detected block is never retried.
         const firstReason = firstError instanceof Error ? firstError.message : String(firstError);
         console.log(`DuckDuckGo navigation failed; retrying once in a fresh tab: ${firstReason}`);
+        reportProgress("recovery", "Search timed out; retrying once in a fresh tab", query);
         try {
           await pause(RETRY_PAUSE_MS);
           await page.close().catch(() => undefined);
@@ -253,6 +256,7 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
         }
         blocks.push(block);
         console.log(`DuckDuckGo blocked this session: ${block.reason}`);
+        reportProgress("search", "Search stopped by a block; remaining queries were not run", block.reason);
         console.log("Stopping search; remaining queries were not run.\n");
         break;
       }

@@ -1,5 +1,6 @@
 import { span, trace } from "neatlogs";
 import { extractSourcePages } from "../browser/sourcePage.js";
+import { reportProgress } from "../observability/progress.js";
 import type { DiagnosticCase } from "../types/diagnosticCase.js";
 import type { Evidence } from "../types/evidence.js";
 import type { PageContent } from "../types/pageContent.js";
@@ -146,6 +147,10 @@ export async function research(
     console.log(`${batch.results.length} result(s) for: ${batch.query}`);
   }
   console.log("");
+  reportProgress(
+    "search",
+    `Search finished: ${rawResults.length} result(s) across ${batches.length} of ${queries.length} queries`
+  );
 
   const candidateEvaluations = evaluateCandidates(rawResults, buildRankTerms(diagnosticCase));
   const uniqueCandidates = candidateEvaluations.map((item) => item.result);
@@ -172,15 +177,25 @@ export async function research(
   };
 
   if (visitedCandidates.length === 0) {
+    reportProgress("research", "No relevant candidate sources to visit");
     return empty;
   }
 
   try {
     console.log(`Collecting evidence from ${visitedCandidates.length} source page(s)...\n`);
+    reportProgress(
+      "research",
+      `Ranked ${ranked.length} candidate source(s); visiting the top ${visitedCandidates.length}`
+    );
     const extractionRecoveries: RecoveryEvent[] = [];
     const pages = await tracedExtractSourcePages(visitedCandidates, (event) => extractionRecoveries.push(event));
     const extracted = tracedExtractEvidence(pages, extraRelevanceTerms(diagnosticCase));
     const rejections = [...extractionRejections(visitedCandidates, pages), ...extracted.rejections];
+    reportProgress(
+      "evidence",
+      `Extracted ${extracted.evidence.length} evidence item(s) from ${pages.length} of ${visitedCandidates.length} page(s)`,
+      rejections.length > 0 ? `${rejections.length} source(s) set aside as unreadable or irrelevant` : undefined
+    );
 
     return {
       queries,

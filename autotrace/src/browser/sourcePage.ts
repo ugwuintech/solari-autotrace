@@ -1,5 +1,6 @@
 import { Solari, type LaunchOptions } from "@solarisdk/browser";
 import type { Page } from "patchright-core";
+import { reportProgress } from "../observability/progress.js";
 import { launchBrowser } from "./launch.js";
 import type { PageContent } from "../types/pageContent.js";
 import type { RecoveryRecorder } from "../types/recovery.js";
@@ -83,6 +84,7 @@ async function readPageContent(page: Page, source: SearchResult): Promise<PageCo
 
   if (!text) {
     console.log(`Source page returned no readable text:\nURL: ${source.url}\n`);
+    reportProgress("source", "Source page had no readable text", source.url);
     return null;
   }
 
@@ -97,10 +99,12 @@ async function readPageContent(page: Page, source: SearchResult): Promise<PageCo
 async function extractOneSource(page: Page, source: SearchResult): Promise<PageContent | null> {
   try {
     console.log(`Visiting source: ${source.url}`);
+    reportProgress("source", "Reading source page", source.url);
     return await readPageContent(page, source);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.log(`AutoTrace source extraction failed:\nURL: ${source.url}\nReason: ${reason}\n`);
+    reportProgress("source", "Could not read source page", `${source.url} (${reason.split("\n")[0]})`);
     return null;
   }
 }

@@ -1,5 +1,5 @@
+import type { ProgressEvent } from "./progress.js";
 import type { RecoveryEvent } from "./recovery.js";
-
 import type { EvidenceRelevance } from "./evidence.js";
 import type { MentionPolarity } from "./hypothesis.js";
 import type { EvidenceSupport } from "./reasoning.js";
@@ -86,3 +86,12 @@ export type InvestigationUiError = {
   error: string;
   detail?: string;
 };
+
+/**
+ * One line of the streamed investigation response (Accept: application/x-ndjson).
+ * Progress lines describe real pipeline steps; the stream ends with exactly one result or error line.
+ */
+export type InvestigationStreamMessage =
+  | { type: "progress"; event: ProgressEvent }
+  | { type: "result"; result: InvestigationUiResult }
+  | ({ type: "error"; statusCode: number } & InvestigationUiError);
