@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bjad7zzg5</task-id>
+<tool-use-id>toolu_015e2SxHoPJwjrytnsbmCTFh</tool-use-id>
+<output-file>C:\Users\HomePC\AppData\Local\Temp\claude\c--Users-HomePC-Documents-GitHub-solari-autotrace\bc08ea1e-eac8-49f8-8596-0c278de20d97\tasks\bjad7zzg5.output</output-file>
+<status>completed</status>
+<summary>Background command "Run baseline C240 investigation with tracing" completed (exit code 0)</summary>
+</task-notification>
