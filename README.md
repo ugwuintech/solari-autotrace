@@ -4,6 +4,48 @@ AutoTrace is an automotive diagnostic research agent. Given a vehicle, diagnosti
 
 It is a research assistant for diagnostic reasoning, not a parts-replacement chatbot and not a confirmed vehicle diagnosis.
 
+## Built during neatHack (Oct 10–12, 2026)
+
+AutoTrace existed before the hackathon (commits up to `feeac7e`, Sept 24, plus the UI redesign in `08ffd9d`). Everything from `1eda599` onwards on the `neathack` branch was built during the event:
+
+| Commit | What |
+| --- | --- |
+| `1eda599` | Entire checkpoint capture, with every commit linked to the Claude Code session that produced it |
+| `343f381` | LiteLLM provider (hosted Claude/Nova) selectable with `AUTOTRACE_LLM`, same evidence validation as Ollama |
+| `7123d0b`, `e23af18` | Neatlogs tracing of the whole investigation: search, page extraction, evidence, follow-up planning, each LLM call with token usage, and assessment validation as a guardrail |
+| `4cd77db` | Recovery when the model backend refuses the response schema |
+| `22a493b` | Deduplicate forum threads listed under several URLs |
+| `3d28d15` | Retry a timed-out search once instead of ending research |
+| latest | Retry Solari session creation once after a transient failure |
+
+### How Neatlogs drove the changes
+
+Each fix came from a failure seen in a traced run, not from a guess:
+
+1. **Baseline run, failed.** Research succeeded, then Bedrock (behind the LiteLLM gateway) rejected the assessment schema: `minItems values other than 0 or 1 are not supported`. The trace also showed two of the four source visits spent on the same mbworld.org thread under two URLs.
+2. **Second run, 0 evidence.** The first DuckDuckGo query hit a 25s navigation timeout, which the code treated as a block, so every remaining query was skipped.
+3. **Third run, failed before research.** Solari returned `POST /sessions: exhausted 2 attempts`; a probe minutes later launched fine.
+
+### Before and after (same case, same model: C240 W203, `claude-sonnet-4.6`)
+
+| | Baseline | After |
+| --- | --- | --- |
+| Outcome | Failed, no assessment | Complete, validated assessment |
+| Research rounds | 1, then failed at reasoning | 2 (targeted follow-up) |
+| Distinct sources from 4 round-1 visits | 3 | 4 |
+| Evidence items | not reached | 5 |
+| Failures recovered | 0 | 4 (2 search timeouts, 2 schema refusals) |
+
+This is one run on each side: it shows the observed failures are now handled, not a statistical improvement.
+
+### Failure recovery rules
+
+Every recovery is recorded as a `RecoveryEvent` (step, failure, action), carried on the investigation result, printed by the CLI and shown in the web UI under "Recovered failures". Recovery never weakens the evidence rules:
+
+- **Schema refused by the backend:** step down `json_schema` → schema without array bounds → `json_object`. Every reply is still validated by `parseAssessment` (full hypothesis coverage, citations only to collected evidence).
+- **Search navigation error (timeout):** retry the query once in a fresh tab. A detected challenge or block page is never retried.
+- **Solari session creation exhausted:** wait 10s and launch once more. Auth and plan errors fail immediately.
+
 ## What it does
 
 1. Accept vehicle, diagnostic codes, and symptoms/context.
@@ -52,7 +94,8 @@ Application code lives under `autotrace/`:
 | `autotrace/src/browser/` | Solari session helpers for search engines and source-page text extraction |
 | `autotrace/src/research/` | Query construction, search, ranking, evidence extraction, follow-up execution |
 | `autotrace/src/reasoning/` | Hypothesis board, deterministic mention polarity, follow-up planning |
-| `autotrace/src/llm/` | Ollama/Qwen provider, prompts, JSON schema constraint, assessment parsing/validation |
+| `autotrace/src/llm/` | Ollama and LiteLLM providers, prompts, JSON schema constraint, assessment parsing/validation, LLM tracing |
+| `autotrace/src/config/` | Neatlogs tracing setup |
 | `autotrace/src/ui/` | Local HTTP tester (form → shared pipeline → mapped UI result) |
 | `autotrace/src/types/` | Shared TypeScript types |
 | `autotrace/tests/` | Deterministic unit tests (no live network required) |
@@ -66,7 +109,7 @@ CLI entry: `autotrace/src/index.ts`. Web tester entry: `autotrace/src/ui/server.
 - **[Ollama](https://ollama.com)** running locally for reasoning
 - **Qwen model** used by default: `qwen3:4b` (overridable via `OLLAMA_MODEL`)
 
-Runtime dependencies (see `autotrace/package.json`): `@solarisdk/browser`, `dotenv`. Dev tooling: `tsx`, `typescript`, `@types/node`.
+Runtime dependencies (see `autotrace/package.json`): `@solarisdk/browser`, `dotenv`, `neatlogs`. Dev tooling: `tsx`, `typescript`, `@types/node`.
 
 ## Setup
 
@@ -89,7 +132,19 @@ Optional overrides:
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3:4b
 PORT=3000
+
+# Hosted reasoning through a LiteLLM gateway instead of local Ollama
+AUTOTRACE_LLM=litellm
+LITELLM_API_KEY=
+LITELLM_MODEL=claude-sonnet-4.6
+
+# Neatlogs tracing (export is disabled without a key)
+NEATLOGS_API_KEY=
 ```
+
+- `AUTOTRACE_LLM` — `ollama` (default) or `litellm`
+- `LITELLM_API_KEY`, `LITELLM_MODEL`, `LITELLM_BASE_URL` — hosted provider settings; the base URL defaults to the neatHack gateway
+- `NEATLOGS_API_KEY` — sends investigation traces to Neatlogs
 
 - `SOLARI_API_KEY` — required for live research (Solari browser sessions)
 - `OLLAMA_BASE_URL` — defaults to `http://localhost:11434`
@@ -154,7 +209,7 @@ npm run typecheck
 - `npm test` — Node’s test runner over the deterministic suites (assessment parsing, evidence polarity, follow-up planning/execution, investigation loop, UI input mapping, and related helpers). Suites inject fakes so they do not require Solari or Ollama.
 - `npm run typecheck` — `tsc --noEmit` for application and test TypeScript projects.
 
-Verified in the current workspace: **78 tests passed**, **0 failed**; typecheck exited successfully.
+Verified on the `neathack` branch: **121 tests passed**, **0 failed**; typecheck exited successfully.
 
 ## Safety and limitations
 
