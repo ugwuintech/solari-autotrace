@@ -1,0 +1,26 @@
+<pasted_content id="ae2b">
+Neatlogs tracing is set up for both AutoTrace entry points. I haven't run the app itself, so no real investigation trace has been checked yet. Typecheck is clean, all 104 tests pass, and the SDK's own test trace reached Neatlogs and read back correctly.
+
+What gets traced
+
+Entry point	Workflow name	Root span
+CLI demo, npm start (src/index.ts)	diagnostic-investigation-cli	investigate_demo_case. Spans are flushed before the process exits.
+UI server, npm run dev, POST /api/investigate (src/ui/server.ts)	diagnostic-investigation-api	investigate_ui_case, one per request. Tracing starts once when the server starts.
+Inside each trace:
+
+LLM calls: both providers call the model with plain fetch, which the SDK doesn't capture automatically. I added src/llm/traceLlmCall.ts, which records each call's model, prompt messages, reply and token counts. litellm.ts and ollama.ts use it.
+Token counts for Ollama: these aren't recorded, because adding them would mean changing the stream parser.
+Web research: each live Solari research run shows up as a web_research tool call (investigate.ts). The unit tests swap in their own research function, so they don't produce these spans.
+Setup: src/config/tracing.ts starts and stops tracing. It sends to https://ingest.neatlogs.com and reads the key from NEATLOGS_API_KEY.
+Key and dependency
+
+NEATLOGS_API_KEY is in autotrace/.env, which git ignores, so the key won't be committed.
+neatlogs@1.1.28 was already in package.json and installed when I started, so I didn't install anything.
+Verification
+
+doctor --local: passed.
+doctor --probe: passed. The first attempt failed with BACKEND_CONNECTION_FAILED because the sandbox blocked network access; it passed when re-run outside the sandbox. The test trace 44ee8cd3f03ec1cbac13d83196c0c795 was found in Neatlogs with all 4 spans and no duplicates.
+Your app's trace: still to do. Run npm start or npm run dev and submit a case, then send me the trace ID or what you see in the dashboard.
+CLI readback: waiting on a human. This optional check needs you to approve a sign-in in your browser or provide a service-account token. I can set it up after your run if you want it.
+Nothing is committed yet.
+</pasted_content id="ae2b">
