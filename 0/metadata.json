@@ -1,0 +1,63 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NSYYM37F2AX5V8GMMFXDFK",
+  "session_id": "45688486-2763-48cc-9a29-ebc197f2e9f1",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T15:40:37.6003373Z",
+  "branch": "neathack",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "autotrace/package.json",
+    "autotrace/src/agent/investigate.ts",
+    "autotrace/src/config/tracing.ts",
+    "autotrace/src/index.ts",
+    "autotrace/src/llm/litellm.ts",
+    "autotrace/src/llm/ollama.ts",
+    "autotrace/src/llm/traceLlmCall.ts",
+    "autotrace/src/ui/server.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "4add905fee96",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 72602,
+    "cache_read_tokens": 1343407,
+    "output_tokens": 12237,
+    "api_call_count": 17
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T15:40:37.4284139Z",
+    "agent_lines": 88,
+    "agent_removed": 22,
+    "human_added": 0,
+    "human_modified": 725,
+    "human_removed": 1,
+    "total_committed": 813,
+    "total_lines_changed": 836,
+    "agent_percentage": 13.157894736842104,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1190,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 101,
+        "AGENTS.md": 1087,
+        "autotrace/package.json": 2
+      },
+      "user_removed_per_file": {
+        "autotrace/package.json": 1
+      }
+    }
+  ]
+}
