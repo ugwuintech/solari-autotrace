@@ -200,12 +200,48 @@ export function normalizeUrl(url: string): string {
   }
 }
 
-// Keep the first occurrence of each destination URL across all queries.
+/**
+ * Identify a forum thread independently of the category path in its URL.
+ * Forums such as mbworld.org file one thread under several category paths
+ * (".../c-class-w203/865023-..." and ".../w203-s203-.../865023-..."), which otherwise spends two
+ * of the few source visits on the same discussion. Returns null for URLs that are not threads.
+ */
+export function forumThreadKey(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const lastSegment = parsed.pathname.split("/").filter((part) => part.length > 0).pop() ?? "";
+
+    // vBulletin SEO URLs: /<category>/<threadId>-<slug>.html
+    const vbulletin = /^(\d+)-[^/]*\.html?$/i.exec(lastSegment);
+    if (vbulletin) {
+      return `${host}#thread-${vbulletin[1]}`;
+    }
+
+    // XenForo URLs: /threads/<slug>.<threadId>/
+    const xenforo = /\/threads\/[^/]*\.(\d+)(\/|$)/i.exec(parsed.pathname);
+    if (xenforo) {
+      return `${host}#thread-${xenforo[1]}`;
+    }
+
+    // Classic vBulletin: showthread.php?t=<threadId>
+    const threadId = parsed.pathname.endsWith("showthread.php") ? parsed.searchParams.get("t") : null;
+    if (threadId && /^\d+$/.test(threadId)) {
+      return `${host}#thread-${threadId}`;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Keep the first occurrence of each destination URL (or forum thread) across all queries.
 export function deduplicateByUrl(results: SearchResult[]): SearchResult[] {
   const seen = new Set<string>();
   const unique: SearchResult[] = [];
   for (const result of results) {
-    const key = normalizeUrl(result.url);
+    const key = forumThreadKey(result.url) ?? normalizeUrl(result.url);
     if (!key || seen.has(key)) {
       continue;
     }
