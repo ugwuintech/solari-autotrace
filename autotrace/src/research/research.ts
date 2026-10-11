@@ -1,6 +1,8 @@
+import { span, trace } from "neatlogs";
 import { extractSourcePages } from "../browser/sourcePage.js";
 import type { DiagnosticCase } from "../types/diagnosticCase.js";
 import type { Evidence } from "../types/evidence.js";
+import type { PageContent } from "../types/pageContent.js";
 import type { CandidateRejection } from "../types/rejection.js";
 import type { SearchBlock, SearchResult } from "../types/search.js";
 import { extractEvidence } from "./extract.js";
@@ -15,6 +17,34 @@ import {
 import { search } from "./search.js";
 
 const MAX_SOURCE_PAGES = 4;
+
+// Neatlogs spans for each research step. Page text is never captured, only what was found or lost.
+const tracedSearch = span({ kind: "TOOL", name: "web_search", toolName: "web_search" }, search);
+const tracedExtractEvidence = span(
+  { kind: "CHAIN", name: "extract_evidence", captureInput: false },
+  extractEvidence
+);
+
+// Visit the selected sources in Solari and record which pages were read and which were lost.
+function tracedExtractSourcePages(sources: SearchResult[]): Promise<PageContent[]> {
+  return trace(
+    { name: "extract_source_pages", kind: "TOOL", input: sources.map((source) => source.url) },
+    async (activeSpan) => {
+      const pages = await extractSourcePages(sources);
+      const extracted = new Set(pages.map((page) => page.url));
+      activeSpan.setAttribute("autotrace.pages.requested", sources.length);
+      activeSpan.setAttribute("autotrace.pages.extracted", pages.length);
+      activeSpan.setAttribute(
+        "output.value",
+        JSON.stringify({
+          extracted: [...extracted],
+          failed: sources.map((source) => source.url).filter((url) => !extracted.has(url)),
+        })
+      );
+      return pages;
+    }
+  );
+}
 
 // How many ranked candidates are reported, so the ranking behind the visit set stays inspectable.
 const MAX_REPORTED_RANKED = 8;
@@ -83,7 +113,7 @@ export async function research(
   options?: ResearchOptions
 ): Promise<ResearchResult> {
   const queries = resolveResearchQueries(diagnosticCase, options);
-  const outcome = await search(queries);
+  const outcome = await tracedSearch(queries);
   const batches = outcome.batches;
   const rawResults = batches.flatMap((batch) => batch.results);
 
@@ -121,8 +151,8 @@ export async function research(
 
   try {
     console.log(`Collecting evidence from ${visitedCandidates.length} source page(s)...\n`);
-    const pages = await extractSourcePages(visitedCandidates);
-    const extracted = extractEvidence(pages, extraRelevanceTerms(diagnosticCase));
+    const pages = await tracedExtractSourcePages(visitedCandidates);
+    const extracted = tracedExtractEvidence(pages, extraRelevanceTerms(diagnosticCase));
     const rejections = [...extractionRejections(visitedCandidates, pages), ...extracted.rejections];
 
     return {

@@ -1,5 +1,5 @@
 import type { DiagnosticAssessment, ReasoningRequest } from "../types/reasoning.js";
-import { parseAssessment } from "./parseAssessment.js";
+import { validateAssessment } from "./validateAssessment.js";
 import { buildReasoningPrompt } from "./prompt.js";
 import type { LlmProvider } from "./provider.js";
 import { buildAssessmentSchema } from "./responseSchema.js";
@@ -144,7 +144,7 @@ export function createLiteLlmProvider(options: LiteLlmProviderOptions = {}): Llm
 
           return readCompletion(await response.json());
         });
-        return parseAssessment(completion.content, request);
+        return validateAssessment(completion.content, request);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         throw new Error(

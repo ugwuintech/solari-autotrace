@@ -27,6 +27,15 @@ export const MAX_RESEARCH_ROUNDS = 2;
 
 // Each live Solari research run appears as a tool call in the Neatlogs trace.
 const tracedResearch = span({ kind: "TOOL", toolName: "web_research" }, research);
+// Rule-based evidence polarity and the follow-up decision, so the trace shows why round 2 ran.
+const tracedHypothesisBoard = span(
+  { kind: "CHAIN", name: "evaluate_evidence", captureInput: false },
+  buildHypothesisBoard
+);
+const tracedPlanFollowUp = span(
+  { kind: "AGENT", name: "plan_follow_up", captureInput: false },
+  planFollowUpResearch
+);
 
 /**
  * Research runner used by the investigation orchestrator.
@@ -143,7 +152,7 @@ export async function runInvestigation(
 ): Promise<InvestigationResult> {
   const runResearch = dependencies.research ?? tracedResearch;
   const provider = dependencies.provider ?? createProviderFromEnv();
-  const planFollowUp = dependencies.planFollowUpResearch ?? planFollowUpResearch;
+  const planFollowUp = dependencies.planFollowUpResearch ?? tracedPlanFollowUp;
   const executeFollowUp =
     dependencies.executeFollowUpResearch ?? executeFollowUpResearch;
 
@@ -157,7 +166,7 @@ export async function runInvestigation(
     evidence: round1.evidence,
     attemptedQueries: recordExecutedQueries([], round1.queries),
     researchRound: 1,
-    hypothesisBoard: buildHypothesisBoard(round1.evidence),
+    hypothesisBoard: tracedHypothesisBoard(round1.evidence),
   };
 
   if (state.evidence.length === 0) {
@@ -243,7 +252,7 @@ export async function runInvestigation(
   }
 
   const board1 = state.hypothesisBoard;
-  const board2 = buildHypothesisBoard(combinedEvidence);
+  const board2 = tracedHypothesisBoard(combinedEvidence);
   state = {
     ...state,
     hypothesisBoard: board2,
