@@ -264,4 +264,28 @@ describe("response format recovery", () => {
 
     await assert.rejects(provider.reason(sampleRequest()), /AutoTrace reasoning failed/);
   });
+
+  it("remembers the accepted format so a later round does not repeat the refused one", async () => {
+    const calls: RecordedCall[] = [];
+    const recoveries: RecoveryEvent[] = [];
+    const provider = createLiteLlmProvider({
+      apiKey: "test-key",
+      fetch: queuedFetch(
+        [
+          { status: 400, body: bedrockSchemaRefusal },
+          { status: 200, body: completion(validContent) },
+          { status: 200, body: completion(validContent) },
+        ],
+        calls
+      ),
+      onRecovery: (event) => recoveries.push(event),
+    });
+
+    await provider.reason(sampleRequest());
+    await provider.reason(sampleRequest());
+
+    assert.equal(calls.length, 3);
+    assert.doesNotMatch(JSON.stringify(sentFormat(calls[2])), /minItems|maxItems/);
+    assert.equal(recoveries.length, 1);
+  });
 });

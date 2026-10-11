@@ -5,7 +5,7 @@ import type { Evidence } from "../types/evidence.js";
 import type { PageContent } from "../types/pageContent.js";
 import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
 import type { CandidateRejection } from "../types/rejection.js";
-import type { SearchBlock, SearchResult } from "../types/search.js";
+import type { SearchBlock, SearchOutcome, SearchResult } from "../types/search.js";
 import { extractEvidence } from "./extract.js";
 import { buildResearchQueries } from "./queries.js";
 import {
@@ -19,8 +19,27 @@ import { search } from "./search.js";
 
 const MAX_SOURCE_PAGES = 4;
 
+// OpenTelemetry's SpanStatusCode.ERROR, used directly to avoid depending on @opentelemetry/api.
+const SPAN_STATUS_ERROR = 2;
+
 // Neatlogs spans for each research step. Page text is never captured, only what was found or lost.
-const tracedSearch = span({ kind: "TOOL", name: "web_search", toolName: "web_search" }, search);
+
+// Search, and mark the span failed when a block stopped it, so a truncated search is never silent.
+function tracedSearch(queries: string[]): Promise<SearchOutcome> {
+  return trace({ name: "web_search", kind: "TOOL", input: queries }, async (activeSpan) => {
+    const outcome = await search(queries);
+    activeSpan.setAttribute("output.value", JSON.stringify(outcome));
+    activeSpan.setAttribute("autotrace.search.blocks", outcome.blocks.length);
+    const block = outcome.blocks[0];
+    if (block) {
+      activeSpan.setStatus({
+        code: SPAN_STATUS_ERROR,
+        message: `search stopped after "${block.query}": ${block.reason}`,
+      });
+    }
+    return outcome;
+  });
+}
 const tracedExtractEvidence = span(
   { kind: "CHAIN", name: "extract_evidence", captureInput: false },
   extractEvidence

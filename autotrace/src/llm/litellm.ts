@@ -161,6 +161,9 @@ export function createLiteLlmProvider(options: LiteLlmProviderOptions = {}): Llm
     throw new Error("LITELLM_API_KEY is not set. Add it to autotrace/.env to use the LiteLLM provider.");
   }
 
+  // Index into responseFormats() of the strictest format the backend has accepted so far.
+  let acceptedFormatIndex = 0;
+
   // Send one chat completion with the given response format and read the reply.
   async function complete(messages: ChatMessage[], format: ResponseFormat): Promise<LiteLlmCompletion> {
     const body = { model, temperature: 0, response_format: format.value, messages };
@@ -199,10 +202,16 @@ export function createLiteLlmProvider(options: LiteLlmProviderOptions = {}): Llm
 
       try {
         let completion: LiteLlmCompletion | undefined;
-        for (const [index, format] of formats.entries()) {
+        // Start from the format this backend last accepted, so a refusal costs one call per run, not per round.
+        for (let index = acceptedFormatIndex; index < formats.length; index += 1) {
+          const format = formats[index];
+          if (!format) {
+            break;
+          }
           const details = { provider: "litellm", model, temperature: 0, messages, responseFormat: format.label };
           try {
             completion = await traceLlmCall(details, () => complete(messages, format));
+            acceptedFormatIndex = index;
             break;
           } catch (error) {
             // Only a refused response format is worth another attempt; anything else is a real failure.
