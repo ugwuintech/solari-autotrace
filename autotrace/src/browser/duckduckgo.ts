@@ -1,5 +1,6 @@
 import { Solari, type LaunchOptions } from "@solarisdk/browser";
 import type { Page } from "patchright-core";
+import type { RecoveryEvent } from "../types/recovery.js";
 import type { SearchBlock, SearchOutcome, SearchQueryResults, SearchResult } from "../types/search.js";
 
 const ENGINE_NAME = "duckduckgo";
@@ -10,6 +11,7 @@ const RESULT_WAIT_TIMEOUT_MS = 15000;
 const NAVIGATION_TIMEOUT_MS = 25000;
 const MORE_RESULTS_TIMEOUT_MS = 4000;
 const QUERY_PAUSE_MS = 1500;
+const RETRY_PAUSE_MS = 3000;
 
 /**
  * A plain datacenter session gets an empty DuckDuckGo result page, so the stealth shim plus
@@ -180,6 +182,7 @@ async function describeBlock(page: Page, query: string, reason: string): Promise
 /**
  * Launch a Solari browser, search DuckDuckGo for each query, and return organic results per query.
  * Searching stops at the first block: AutoTrace reports the block rather than retrying around it.
+ * A navigation error that is not a block (e.g. a timeout) is retried once in a fresh tab.
  */
 export async function searchDuckDuckGoQueries(queries: string[]): Promise<SearchOutcome> {
   const apiKey = process.env.SOLARI_API_KEY;
@@ -194,22 +197,41 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
   const browser = await solari.launch(DUCKDUCKGO_LAUNCH_OPTIONS);
 
   try {
-    const page = await browser.newPage();
+    let page = await browser.newPage();
     const batches: SearchQueryResults[] = [];
     const blocks: SearchBlock[] = [];
+    const recoveries: RecoveryEvent[] = [];
 
     for (const query of queries) {
       console.log(`Searching DuckDuckGo: ${query}`);
       let outcome: QueryOutcome;
       try {
         outcome = await searchOneQuery(page, query);
-      } catch (error: unknown) {
-        // Navigation/search failure for one query: record as a block and stop remaining queries.
-        const reason = error instanceof Error ? error.message : String(error);
-        outcome = {
-          results: [],
-          blockReason: `DuckDuckGo search navigation failed for this query: ${reason}`,
-        };
+      } catch (firstError: unknown) {
+        // A thrown navigation error (timeout, dropped connection) is not a challenge page, so the
+        // query is retried once in a fresh tab. A detected block is never retried.
+        const firstReason = firstError instanceof Error ? firstError.message : String(firstError);
+        console.log(`DuckDuckGo navigation failed; retrying once in a fresh tab: ${firstReason}`);
+        try {
+          await pause(RETRY_PAUSE_MS);
+          await page.close().catch(() => undefined);
+          page = await browser.newPage();
+          outcome = await searchOneQuery(page, query);
+          recoveries.push({
+            step: "web search",
+            failure: `DuckDuckGo navigation failed for "${query}": ${firstReason.split("\n")[0]}`,
+            action: outcome.blockReason
+              ? "retried once in a fresh tab; the retry hit a block, so searching stopped"
+              : `retried once in a fresh tab and got ${outcome.results.length} result(s)`,
+          });
+        } catch (error: unknown) {
+          // Still failing after one retry: record as a block and stop remaining queries.
+          const reason = error instanceof Error ? error.message : String(error);
+          outcome = {
+            results: [],
+            blockReason: `DuckDuckGo search navigation failed for this query after one retry: ${reason}`,
+          };
+        }
       }
       batches.push({ query, results: outcome.results });
 
@@ -234,7 +256,7 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
       await pause(QUERY_PAUSE_MS);
     }
 
-    return { engine: ENGINE_NAME, batches, blocks };
+    return { engine: ENGINE_NAME, batches, blocks, recoveries };
   } finally {
     await browser.close();
     // Required: the client keeps a loopback proxy open that holds the process alive.

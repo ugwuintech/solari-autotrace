@@ -45,7 +45,7 @@ const tracedPlanFollowUp = span(
 export type InvestigationResearchRunner = (
   diagnosticCase: DiagnosticCase,
   options?: ResearchOptions
-) => Promise<Pick<ResearchResult, "queries" | "evidence">>;
+) => Promise<Pick<ResearchResult, "queries" | "evidence"> & Partial<Pick<ResearchResult, "recoveries">>>;
 
 /**
  * Optional overrides for deterministic tests and alternate providers.
@@ -166,7 +166,15 @@ async function runBoundedInvestigation(
   dependencies: InvestigationDependencies,
   recordRecovery: RecoveryRecorder
 ): Promise<Omit<InvestigationResult, "recoveries">> {
-  const runResearch = dependencies.research ?? tracedResearch;
+  const baseResearch = dependencies.research ?? tracedResearch;
+  // Every research round (initial and follow-up) reports its recoveries to the investigation.
+  const runResearch: InvestigationResearchRunner = async (researchCase, options) => {
+    const outcome = await baseResearch(researchCase, options);
+    for (const event of outcome.recoveries ?? []) {
+      recordRecovery(event);
+    }
+    return outcome;
+  };
   const provider = dependencies.provider ?? createProviderFromEnv(process.env, { onRecovery: recordRecovery });
   const planFollowUp = dependencies.planFollowUpResearch ?? tracedPlanFollowUp;
   const executeFollowUp =

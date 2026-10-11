@@ -706,4 +706,33 @@ describe("runInvestigation", () => {
       /AutoTrace reasoning failed: reassessment unavailable/
     );
   });
+
+  it("carries recoveries reported by research onto the result", async () => {
+    const recovery = {
+      step: "web search",
+      failure: 'DuckDuckGo navigation failed for "query-round-1": page.goto: Timeout 25000ms exceeded.',
+      action: "retried once in a fresh tab and got 25 result(s)",
+    };
+    const provider = createMockProvider([sampleAssessment([])]);
+
+    const result = await runInvestigation(diagnosticCase, {
+      research: async () => ({
+        queries: ["query-round-1"],
+        evidence: [sampleEvidence("https://example.com/a")],
+        recoveries: [recovery],
+      }),
+      provider,
+    });
+
+    assert.deepEqual(result.recoveries, [recovery]);
+  });
+
+  it("reports no recoveries when nothing failed", async () => {
+    const result = await runInvestigation(diagnosticCase, {
+      research: createResearchStub([{ queries: ["q"], evidence: [sampleEvidence("https://example.com/a")] }]),
+      provider: createMockProvider([sampleAssessment([])]),
+    });
+
+    assert.deepEqual(result.recoveries, []);
+  });
 });

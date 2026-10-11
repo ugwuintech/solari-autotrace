@@ -3,6 +3,7 @@ import { extractSourcePages } from "../browser/sourcePage.js";
 import type { DiagnosticCase } from "../types/diagnosticCase.js";
 import type { Evidence } from "../types/evidence.js";
 import type { PageContent } from "../types/pageContent.js";
+import type { RecoveryEvent } from "../types/recovery.js";
 import type { CandidateRejection } from "../types/rejection.js";
 import type { SearchBlock, SearchResult } from "../types/search.js";
 import { extractEvidence } from "./extract.js";
@@ -64,6 +65,8 @@ export type ResearchResult = {
   searchResults: SearchResult[];
   evidence: Evidence[];
   rejections: CandidateRejection[];
+  // Failed research actions that were retried successfully or recorded before stopping.
+  recoveries: RecoveryEvent[];
 };
 
 /**
@@ -132,6 +135,7 @@ export async function research(
     queries,
     searchEngine: outcome.engine,
     searchBlocks: outcome.blocks,
+    recoveries: outcome.recoveries ?? [],
     rawResultCount: rawResults.length,
     uniqueCandidateCount: uniqueCandidates.length,
     rankedCandidateCount: ranked.length,
@@ -159,6 +163,7 @@ export async function research(
       queries,
       searchEngine: outcome.engine,
       searchBlocks: outcome.blocks,
+      recoveries: outcome.recoveries ?? [],
       rawResultCount: rawResults.length,
       uniqueCandidateCount: uniqueCandidates.length,
       rankedCandidateCount: ranked.length,
