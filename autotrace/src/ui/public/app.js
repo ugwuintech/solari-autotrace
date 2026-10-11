@@ -532,6 +532,10 @@ function renderResult(input, result) {
     ? `Follow-up reassessment failed, so the first-round assessment is shown. ${result.reassessmentError}`
     : "";
 
+  const searchWarning = document.getElementById("search-warning");
+  searchWarning.hidden = !result.searchWarning;
+  searchWarning.textContent = result.searchWarning ?? "";
+
   renderRecoveries(result.recoveries ?? []);
   renderHypotheses(result.hypotheses);
   renderEvidence(result.evidence);

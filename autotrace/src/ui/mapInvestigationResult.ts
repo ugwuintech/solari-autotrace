@@ -91,6 +91,20 @@ function mapRecommendedTest(result: InvestigationResult): UiRecommendedTest | nu
   };
 }
 
+// Explain a stopped search in plain words, keeping the first line of the underlying reason.
+function searchWarning(result: InvestigationResult): string | null {
+  const block = result.searchBlocks[0];
+  if (!block) {
+    return null;
+  }
+  const reason = block.reason.split("\n")[0] ?? block.reason;
+  return (
+    `Search stopped at "${block.query}": ${reason} ` +
+    "AutoTrace does not work around search engine limits, so later queries were not run. " +
+    "Results below may be thin or empty; try again later."
+  );
+}
+
 /**
  * Convert a completed InvestigationResult into the JSON shape rendered by the tester UI.
  * Does not invent findings; it only reshapes data already produced by runInvestigation.
@@ -117,6 +131,7 @@ export function mapInvestigationResult(result: InvestigationResult): Investigati
     reasoning: assessment?.reasoning ?? null,
     disclaimer: DIAGNOSTIC_DISCLAIMER,
     recoveries: result.recoveries,
+    searchWarning: searchWarning(result),
     ...(result.reassessmentError !== undefined
       ? { reassessmentError: result.reassessmentError }
       : {}),

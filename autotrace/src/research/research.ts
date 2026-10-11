@@ -7,7 +7,7 @@ import type { PageContent } from "../types/pageContent.js";
 import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
 import type { CandidateRejection } from "../types/rejection.js";
 import type { SearchBlock, SearchOutcome, SearchResult } from "../types/search.js";
-import { extractEvidence } from "./extract.js";
+import { extractEvidence, type ExtractResult } from "./extract.js";
 import { buildResearchQueries } from "./queries.js";
 import {
   buildRankTerms,
@@ -133,6 +133,60 @@ function extractionRejections(
     }));
 }
 
+type ExtractionOutcome = {
+  visited: SearchResult[];
+  pages: PageContent[];
+  extracted: ExtractResult;
+};
+
+/**
+ * Visit the selected sources and extract evidence. When none of them yields usable evidence (for
+ * example every page was paywalled or failed to load), visit the next-ranked candidates once.
+ * The extra pass is bounded to one batch and recorded as a recovery, never repeated.
+ */
+async function extractWithBackfill(
+  selected: SearchResult[],
+  ranked: CandidateEvaluation[],
+  relevanceTerms: string[],
+  onRecovery: RecoveryRecorder
+): Promise<ExtractionOutcome> {
+  const pages = await tracedExtractSourcePages(selected, onRecovery);
+  const extracted = tracedExtractEvidence(pages, relevanceTerms);
+  if (extracted.evidence.length > 0) {
+    return { visited: selected, pages, extracted };
+  }
+
+  const alreadyVisited = new Set(selected.map((source) => source.url));
+  const backfill = selectCandidates(
+    ranked.filter((candidate) => !alreadyVisited.has(candidate.result.url)),
+    MAX_SOURCE_PAGES
+  );
+  if (backfill.length === 0) {
+    return { visited: selected, pages, extracted };
+  }
+
+  reportProgress(
+    "research",
+    `No usable evidence from the first ${selected.length} page(s); visiting the next ${backfill.length} ranked source(s)`
+  );
+  const morePages = await tracedExtractSourcePages(backfill, onRecovery);
+  const moreExtracted = tracedExtractEvidence(morePages, relevanceTerms);
+  onRecovery({
+    step: "source extraction",
+    failure: `none of the ${selected.length} selected page(s) yielded usable evidence`,
+    action: `visited the next ${backfill.length} ranked source(s) once and found ${moreExtracted.evidence.length} evidence item(s)`,
+  });
+
+  return {
+    visited: [...selected, ...backfill],
+    pages: [...pages, ...morePages],
+    extracted: {
+      evidence: moreExtracted.evidence,
+      rejections: [...extracted.rejections, ...moreExtracted.rejections],
+    },
+  };
+}
+
 // Search with several queries, rank unique sources, visit a few, and extract evidence.
 export async function research(
   diagnosticCase: DiagnosticCase,
@@ -188,12 +242,16 @@ export async function research(
       `Ranked ${ranked.length} candidate source(s); visiting the top ${visitedCandidates.length}`
     );
     const extractionRecoveries: RecoveryEvent[] = [];
-    const pages = await tracedExtractSourcePages(visitedCandidates, (event) => extractionRecoveries.push(event));
-    const extracted = tracedExtractEvidence(pages, extraRelevanceTerms(diagnosticCase));
-    const rejections = [...extractionRejections(visitedCandidates, pages), ...extracted.rejections];
+    const { visited, pages, extracted } = await extractWithBackfill(
+      visitedCandidates,
+      ranked,
+      extraRelevanceTerms(diagnosticCase),
+      (event) => extractionRecoveries.push(event)
+    );
+    const rejections = [...extractionRejections(visited, pages), ...extracted.rejections];
     reportProgress(
       "evidence",
-      `Extracted ${extracted.evidence.length} evidence item(s) from ${pages.length} of ${visitedCandidates.length} page(s)`,
+      `Extracted ${extracted.evidence.length} evidence item(s) from ${pages.length} of ${visited.length} page(s)`,
       rejections.length > 0 ? `${rejections.length} source(s) set aside as unreadable or irrelevant` : undefined
     );
 
@@ -205,10 +263,10 @@ export async function research(
       rawResultCount: rawResults.length,
       uniqueCandidateCount: uniqueCandidates.length,
       rankedCandidateCount: ranked.length,
-      candidatesVisited: visitedCandidates.length,
+      candidatesVisited: visited.length,
       candidatesRejectedAsIrrelevant: extracted.rejections.length,
       rankedCandidates,
-      visitedCandidates,
+      visitedCandidates: visited,
       candidateEvaluations,
       searchResults: uniqueCandidates,
       evidence: extracted.evidence,

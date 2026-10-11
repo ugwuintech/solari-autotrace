@@ -45,6 +45,21 @@ const LOW_VALUE_PATH_PATTERNS = [
   "/used-mercedes",
 ];
 
+/**
+ * Sites whose pages yield no readable diagnostic text to the extractor: video pages, paywalled Q&A
+ * (justanswer.com showed only its paywall in a live run), and login-walled social sites. Unlike the
+ * low-value rules, these are excluded even when the title looks technical, because a matching title
+ * cannot turn into evidence if the page text is unavailable.
+ */
+const UNREADABLE_SOURCE_HOSTS = [
+  "youtube.com",
+  "youtu.be",
+  "justanswer.com",
+  "tiktok.com",
+  "facebook.com",
+  "instagram.com",
+];
+
 const LOW_VALUE_TITLE_PATTERNS = [
   "for sale",
   "inventory",
@@ -396,6 +411,16 @@ function hasLowValuePath(pathname: string): boolean {
   return LOW_VALUE_PATH_PATTERNS.some((pattern) => path.includes(pattern));
 }
 
+// True when the source is on a site whose pages the extractor cannot read.
+export function isUnreadableSource(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return UNREADABLE_SOURCE_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
+
 // Generic dealer homepages and inventory/ad pages are excluded unless the hit already looks technical.
 function isLowValueSource(result: SearchResult, terms: RankTerms): boolean {
   const haystack = `${result.title} ${result.url}`.toLowerCase();
@@ -497,7 +522,7 @@ type CandidateScore = {
  * qualify as evidence once the relevance gate reads it.
  */
 function scoreCandidate(result: SearchResult, terms: RankTerms): CandidateScore {
-  if (isLowValueSource(result, terms)) {
+  if (isUnreadableSource(result.url) || isLowValueSource(result, terms)) {
     return { score: 0, signals: [] };
   }
 
@@ -564,6 +589,9 @@ function scoreCandidate(result: SearchResult, terms: RankTerms): CandidateScore 
 function exclusionReason(result: SearchResult, score: number, terms: RankTerms): string | null {
   if (score > 0) {
     return null;
+  }
+  if (isUnreadableSource(result.url)) {
+    return "video, paywalled, or login-walled page with no readable text";
   }
   if (isLowValueSource(result, terms)) {
     return "generic dealer, inventory, advertisement, or homepage";

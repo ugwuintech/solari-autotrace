@@ -21,6 +21,7 @@ import type { HypothesisBoard } from "../types/hypothesis.js";
 import type { InvestigationState } from "../types/investigation.js";
 import type { DiagnosticAssessment } from "../types/reasoning.js";
 import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
+import type { SearchBlock } from "../types/search.js";
 import type { ResearchObjective } from "../types/researchObjective.js";
 
 /**
@@ -48,7 +49,9 @@ const tracedPlanFollowUp = span(
 export type InvestigationResearchRunner = (
   diagnosticCase: DiagnosticCase,
   options?: ResearchOptions
-) => Promise<Pick<ResearchResult, "queries" | "evidence"> & Partial<Pick<ResearchResult, "recoveries">>>;
+) => Promise<
+  Pick<ResearchResult, "queries" | "evidence"> & Partial<Pick<ResearchResult, "recoveries" | "searchBlocks">>
+>;
 
 /**
  * Optional overrides for deterministic tests and alternate providers.
@@ -82,6 +85,8 @@ export type InvestigationResult = {
   reassessmentError?: string;
   /** Failed actions the agent recovered from, in the order they happened. */
   recoveries: RecoveryEvent[];
+  /** Searches that were stopped (block or repeated navigation failure) and not worked around. */
+  searchBlocks: SearchBlock[];
 };
 
 // Start an empty investigation ready for the first research round.
@@ -155,7 +160,7 @@ function finish(
     reasoningCalls: number;
     reassessmentError?: string;
   }
-): Omit<InvestigationResult, "recoveries"> {
+): Omit<InvestigationResult, "recoveries" | "searchBlocks"> {
   return {
     state: { ...state, status: "complete" },
     followUpObjectives: extras.followUpObjectives ?? [],
@@ -184,7 +189,8 @@ export async function runInvestigation(
   dependencies: InvestigationDependencies = {}
 ): Promise<InvestigationResult> {
   const recoveries: RecoveryEvent[] = [];
-  const result = await runBoundedInvestigation(diagnosticCase, dependencies, (event) => {
+  const searchBlocks: SearchBlock[] = [];
+  const result = await runBoundedInvestigation(diagnosticCase, dependencies, searchBlocks, (event) => {
     console.log(`Recovered from a failed ${event.step} step: ${event.action}\n`);
     reportProgress("recovery", `Recovered a failed ${event.step} step: ${event.action}`, event.failure);
     recoveries.push(event);
@@ -193,14 +199,15 @@ export async function runInvestigation(
     "complete",
     `Investigation complete: ${result.state.evidence.length} evidence item(s) over ${result.state.researchRound} round(s)`
   );
-  return { ...result, recoveries };
+  return { ...result, recoveries, searchBlocks };
 }
 
 async function runBoundedInvestigation(
   diagnosticCase: DiagnosticCase,
   dependencies: InvestigationDependencies,
+  searchBlocks: SearchBlock[],
   recordRecovery: RecoveryRecorder
-): Promise<Omit<InvestigationResult, "recoveries">> {
+): Promise<Omit<InvestigationResult, "recoveries" | "searchBlocks">> {
   const baseResearch = dependencies.research ?? tracedResearch;
   // Every research round (initial and follow-up) reports its recoveries to the investigation.
   const runResearch: InvestigationResearchRunner = async (researchCase, options) => {
@@ -208,6 +215,7 @@ async function runBoundedInvestigation(
     for (const event of outcome.recoveries ?? []) {
       recordRecovery(event);
     }
+    searchBlocks.push(...(outcome.searchBlocks ?? []));
     return outcome;
   };
   const provider = dependencies.provider ?? createProviderFromEnv(process.env, { onRecovery: recordRecovery });

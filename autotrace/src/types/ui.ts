@@ -75,6 +75,11 @@ export type InvestigationUiResult = {
   recommendedNextTest: UiRecommendedTest | null;
   reasoning: string | null;
   disclaimer: string;
+  /**
+   * Set when a search was stopped (rate limit, block, or repeated navigation failure) and AutoTrace did
+   * not work around it, so an empty or thin result explains itself.
+   */
+  searchWarning: string | null;
   /** Failed actions the agent recovered from during this investigation. */
   recoveries: RecoveryEvent[];
   /** Present when round-2 reassessment failed; round-1 assessment was retained. */

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { deduplicateByUrl, forumThreadKey } from "../src/research/rank.js";
+import { buildRankTerms, deduplicateByUrl, evaluateCandidates, forumThreadKey, isUnreadableSource } from "../src/research/rank.js";
 
 // The two URL shapes for one mbworld.org thread seen in the baseline research run.
 const threadInCClass = "https://mbworld.org/forums/c-class-w203/865023-05-c240-cylinder-5-misfire.html";
@@ -43,5 +43,28 @@ describe("deduplicateByUrl", () => {
       unique.map((item) => item.url),
       [threadInCClass, "https://www.obd-codes.test/p0305"]
     );
+  });
+});
+
+describe("unreadable sources", () => {
+  const terms = buildRankTerms({
+    vehicle: { make: "Mercedes-Benz", model: "C240", platform: "W203" },
+    codes: [{ code: "P2001" }],
+  });
+
+  it("recognises video, paywalled and login-walled hosts", () => {
+    assert.equal(isUnreadableSource("https://www.justanswer.com/mercedes/abc-c240-p2001.html"), true);
+    assert.equal(isUnreadableSource("https://www.youtube.com/playlist?list=abc"), true);
+    assert.equal(isUnreadableSource("https://mbworld.org/forums/c-class-w203/1-p2001.html"), false);
+  });
+
+  it("excludes a paywalled page even when its title matches the vehicle and code", () => {
+    const [evaluation] = evaluateCandidates(
+      [{ title: "2004 Mercedes C240 engine code P2001", url: "https://www.justanswer.com/mercedes/ccd2b-2004-mercedes-c240-engine-code-p2001.html" }],
+      terms
+    );
+
+    assert.equal(evaluation?.score, 0);
+    assert.match(evaluation?.exclusionReason ?? "", /no readable text/);
   });
 });
