@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4NRKFZQK34F24TKK5F0K9AY",
+  "strategy": "manual-commit",
+  "branch": "neathack",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "autotrace/src/ui/public/app.js",
+    "autotrace/src/ui/public/index.html",
+    "autotrace/src/ui/public/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 117549,
+    "cache_read_tokens": 2520538,
+    "output_tokens": 18155,
+    "api_call_count": 36
+  }
+}
