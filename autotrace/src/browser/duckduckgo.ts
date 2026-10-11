@@ -1,5 +1,6 @@
 import { Solari, type LaunchOptions } from "@solarisdk/browser";
 import type { Page } from "patchright-core";
+import { launchBrowser } from "./launch.js";
 import type { RecoveryEvent } from "../types/recovery.js";
 import type { SearchBlock, SearchOutcome, SearchQueryResults, SearchResult } from "../types/search.js";
 
@@ -194,13 +195,16 @@ export async function searchDuckDuckGoQueries(queries: string[]): Promise<Search
     apiKey,
   });
 
-  const browser = await solari.launch(DUCKDUCKGO_LAUNCH_OPTIONS);
+  const recoveries: RecoveryEvent[] = [];
+  const browser = await launchBrowser(solari, DUCKDUCKGO_LAUNCH_OPTIONS, "web search", (event) =>
+    recoveries.push(event)
+  );
 
   try {
     let page = await browser.newPage();
     const batches: SearchQueryResults[] = [];
     const blocks: SearchBlock[] = [];
-    const recoveries: RecoveryEvent[] = [];
+
 
     for (const query of queries) {
       console.log(`Searching DuckDuckGo: ${query}`);

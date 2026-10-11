@@ -3,7 +3,7 @@ import { extractSourcePages } from "../browser/sourcePage.js";
 import type { DiagnosticCase } from "../types/diagnosticCase.js";
 import type { Evidence } from "../types/evidence.js";
 import type { PageContent } from "../types/pageContent.js";
-import type { RecoveryEvent } from "../types/recovery.js";
+import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
 import type { CandidateRejection } from "../types/rejection.js";
 import type { SearchBlock, SearchResult } from "../types/search.js";
 import { extractEvidence } from "./extract.js";
@@ -27,11 +27,14 @@ const tracedExtractEvidence = span(
 );
 
 // Visit the selected sources in Solari and record which pages were read and which were lost.
-function tracedExtractSourcePages(sources: SearchResult[]): Promise<PageContent[]> {
+function tracedExtractSourcePages(
+  sources: SearchResult[],
+  onRecovery: RecoveryRecorder
+): Promise<PageContent[]> {
   return trace(
     { name: "extract_source_pages", kind: "TOOL", input: sources.map((source) => source.url) },
     async (activeSpan) => {
-      const pages = await extractSourcePages(sources);
+      const pages = await extractSourcePages(sources, onRecovery);
       const extracted = new Set(pages.map((page) => page.url));
       activeSpan.setAttribute("autotrace.pages.requested", sources.length);
       activeSpan.setAttribute("autotrace.pages.extracted", pages.length);
@@ -155,7 +158,8 @@ export async function research(
 
   try {
     console.log(`Collecting evidence from ${visitedCandidates.length} source page(s)...\n`);
-    const pages = await tracedExtractSourcePages(visitedCandidates);
+    const extractionRecoveries: RecoveryEvent[] = [];
+    const pages = await tracedExtractSourcePages(visitedCandidates, (event) => extractionRecoveries.push(event));
     const extracted = tracedExtractEvidence(pages, extraRelevanceTerms(diagnosticCase));
     const rejections = [...extractionRejections(visitedCandidates, pages), ...extracted.rejections];
 
@@ -163,7 +167,7 @@ export async function research(
       queries,
       searchEngine: outcome.engine,
       searchBlocks: outcome.blocks,
-      recoveries: outcome.recoveries ?? [],
+      recoveries: [...(outcome.recoveries ?? []), ...extractionRecoveries],
       rawResultCount: rawResults.length,
       uniqueCandidateCount: uniqueCandidates.length,
       rankedCandidateCount: ranked.length,

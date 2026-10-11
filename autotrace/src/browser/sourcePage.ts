@@ -1,6 +1,8 @@
 import { Solari, type LaunchOptions } from "@solarisdk/browser";
 import type { Page } from "patchright-core";
+import { launchBrowser } from "./launch.js";
 import type { PageContent } from "../types/pageContent.js";
+import type { RecoveryRecorder } from "../types/recovery.js";
 import type { SearchResult } from "../types/search.js";
 
 const PAGE_TIMEOUT_MS = 20000;
@@ -104,7 +106,10 @@ async function extractOneSource(page: Page, source: SearchResult): Promise<PageC
 }
 
 // Launch a Solari browser, visit each source page, and return usable page content.
-export async function extractSourcePages(sources: SearchResult[]): Promise<PageContent[]> {
+export async function extractSourcePages(
+  sources: SearchResult[],
+  onRecovery?: RecoveryRecorder
+): Promise<PageContent[]> {
   if (sources.length === 0) {
     return [];
   }
@@ -118,7 +123,7 @@ export async function extractSourcePages(sources: SearchResult[]): Promise<PageC
     apiKey,
   });
 
-  const browser = await solari.launch(SOURCE_LAUNCH_OPTIONS);
+  const browser = await launchBrowser(solari, SOURCE_LAUNCH_OPTIONS, "source extraction", onRecovery);
 
   try {
     const page = await browser.newPage();
