@@ -16,7 +16,7 @@ AutoTrace existed before the hackathon (commits up to `feeac7e`, Sept 24, plus t
 | `4cd77db` | Recovery when the model backend refuses the response schema |
 | `22a493b` | Deduplicate forum threads listed under several URLs |
 | `3d28d15` | Retry a timed-out search once instead of ending research |
-| latest | Retry Solari session creation once after a transient failure |
+| `866c7c0` | Retry Solari session creation once after a transient failure |
 
 ### How Neatlogs drove the changes
 
