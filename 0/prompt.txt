@@ -1,0 +1,70 @@
+i just ran tests that gave zero results  check the terminal
+
+---
+
+<pasted_content id="ae2b">
+PS C:\Users\HomePC\Documents\GitHub\solari-autotrace\autotrace> npm run dev           
+
+> autotrace@1.0.0 dev
+> tsx --env-file=.env src/ui/server.ts
+
+AutoTrace tester UI
+===================
+Open http://localhost:3000 in your browser.
+POST /api/investigate runs the real investigation pipeline.
+AutoTrace UI: starting streamed investigation for Mercedes c240 w204 (p2001)
+[solari-sdk:local-proxy] upstream recovered for Ao96SKtJ on attempt 2
+Searching DuckDuckGo: Mercedes c240 W204 P2001
+DuckDuckGo navigation failed; retrying once in a fresh tab: page.goto: Timeout 25000ms exceeded.
+Call log:
+  - navigating to "https://duckduckgo.com/?q=Mercedes%20c240%20W204%20P2001&ia=web&kl=us-en", waiting until "domcontentloaded"
+
+SERP title: Mercedes c240 W204 P2001 at DuckDuckGo
+First result: P2001 Code Mercedes: Comprehensive Diagnostic And Repair Guide
+Searching DuckDuckGo: Mercedes W204 P2001 diagnostic forum
+SERP title: Mercedes W204 P2001 diagnostic forum at DuckDuckGo
+First result: P2001 Code Mercedes: Comprehensive Diagnostic And Repair Guide
+25 result(s) for: Mercedes c240 W204 P2001
+25 result(s) for: Mercedes W204 P2001 diagnostic forum
+
+Collecting evidence from 4 source page(s)...
+
+Visiting source: https://www.justanswer.com/mercedes/ccd2b-2004-mercedes-c240-engine-code-p2001.html
+Content read from: whole page (no content container matched)
+Visiting source: https://www.justanswer.com/mercedes/fw0ff-mercedes-benz-c240-matic-2005-error-p2001.html
+Content read from: whole page (no content container matched)
+Visiting source: https://www.justanswer.com/mercedes/eg4tn-mercedes-benz-c240-year-2005-error-code-p2001-p0400.html
+Content read from: whole page (no content container matched)
+Visiting source: https://www.youtube.com/playlist?REDACTED
+Content read from: whole page (no content container matched)
+Skipping unusable source content:
+URL: https://www.justanswer.com/mercedes/ccd2b-2004-mercedes-c240-engine-code-p2001.html
+
+Skipping unusable source content:
+URL: https://www.justanswer.com/mercedes/fw0ff-mercedes-benz-c240-matic-2005-error-p2001.html
+
+Skipping unusable source content:
+URL: https://www.justanswer.com/mercedes/eg4tn-mercedes-benz-c240-year-2005-error-code-p2001-p0400.html
+
+Skipping irrelevant source content:
+URL: https://www.youtube.com/playlist?REDACTED
+
+Recovered from a failed web search step: retried once in a fresh tab and got 25 result(s)
+
+AutoTrace UI: investigation complete
+AutoTrace UI: starting streamed investigation for mercedes benz c300 (p0100)
+Searching DuckDuckGo: mercedes benz C300 P0100
+DuckDuckGo navigation failed; retrying once in a fresh tab: page.goto: Timeout 25000ms exceeded.
+Call log:
+  - navigating to "https://duckduckgo.com/?q=mercedes%20benz%20C300%20P0100&ia=web&kl=us-en", waiting until "domcontentloaded"
+
+DuckDuckGo blocked this session: DuckDuckGo search navigation failed for this query after one retry: page.goto: Timeout 25000ms exceeded.
+Call log:
+  - navigating to "https://duckduckgo.com/?q=mercedes%20benz%20C300%20P0100&ia=web&kl=us-en", waiting until "domcontentloaded"
+
+Stopping search; remaining queries were not run.
+
+0 result(s) for: mercedes benz C300 P0100
+
+AutoTrace UI: investigation complete
+</pasted_content id="ae2b">
