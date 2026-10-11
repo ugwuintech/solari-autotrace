@@ -16,9 +16,76 @@
   --contradicts-bg: rgba(226, 119, 95, 0.12);
   --context: #a7b3c0;
   --context-bg: rgba(167, 179, 192, 0.1);
+  --amber-line: rgba(232, 163, 61, 0.4);
+  --car-glass: #252b31;
+  --car-tyre: #0a0b0c;
+  --lamp-front-off: #5a564c;
+  --lamp-rear-off: #6b2e25;
+  --lamp-front-on: #f3e6c4;
+  --lamp-rear-on: #c2493a;
+  --hazard-off: #3a3326;
   --sans: system-ui, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
   color-scheme: dark;
+}
+
+/* Light palette: warm paper and graphite ink, the same single accent darkened for contrast. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f1eb;
+    --panel: #ffffff;
+    --panel-2: #f8f6f1;
+    --line: #e1ddd2;
+    --line-strong: #c9c3b5;
+    --ink: #1c1b18;
+    --muted: #5b5850;
+    --faint: #85817a;
+    --amber: #a35f0c;
+    --amber-ink: #ffffff;
+    --supports: #2e7537;
+    --supports-bg: rgba(46, 117, 55, 0.1);
+    --contradicts: #b0402a;
+    --contradicts-bg: rgba(176, 64, 42, 0.09);
+    --context: #4d5d6c;
+    --context-bg: rgba(77, 93, 108, 0.09);
+    --amber-line: rgba(163, 95, 12, 0.35);
+    --car-glass: #cfd6dc;
+    --car-tyre: #2b2c2e;
+    --lamp-front-off: #c4bdac;
+    --lamp-rear-off: #cfa29a;
+    --lamp-front-on: #f2c75c;
+    --lamp-rear-on: #c2493a;
+    --hazard-off: #e6dcc6;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f3f1eb;
+  --panel: #ffffff;
+  --panel-2: #f8f6f1;
+  --line: #e1ddd2;
+  --line-strong: #c9c3b5;
+  --ink: #1c1b18;
+  --muted: #5b5850;
+  --faint: #85817a;
+  --amber: #a35f0c;
+  --amber-ink: #ffffff;
+  --supports: #2e7537;
+  --supports-bg: rgba(46, 117, 55, 0.1);
+  --contradicts: #b0402a;
+  --contradicts-bg: rgba(176, 64, 42, 0.09);
+  --context: #4d5d6c;
+  --context-bg: rgba(77, 93, 108, 0.09);
+  --amber-line: rgba(163, 95, 12, 0.35);
+  --car-glass: #cfd6dc;
+  --car-tyre: #2b2c2e;
+  --lamp-front-off: #c4bdac;
+  --lamp-rear-off: #cfa29a;
+  --lamp-front-on: #f2c75c;
+  --lamp-rear-on: #c2493a;
+  --hazard-off: #e6dcc6;
+  color-scheme: light;
 }
 
 * {
@@ -124,6 +191,45 @@ a:hover {
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.01em;
+}
+
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  font: 600 12.5px var(--sans);
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--amber);
+}
+
+.theme-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* The icon shows the theme a click switches to. */
+.theme-toggle[data-target="dark"] .sun,
+.theme-toggle[data-target="light"] .moon {
+  display: none;
 }
 
 .tagline,
@@ -250,7 +356,7 @@ textarea {
   font-family: var(--mono);
   font-size: 12.5px;
   color: var(--amber);
-  border: 1px solid rgba(232, 163, 61, 0.4);
+  border: 1px solid var(--amber-line);
   border-radius: 4px;
 }
 
@@ -329,7 +435,7 @@ textarea {
 }
 
 .scene-car .glass {
-  fill: #252b31;
+  fill: var(--car-glass);
   stroke: var(--ink);
   stroke-width: 1.2;
   stroke-linejoin: round;
@@ -342,7 +448,7 @@ textarea {
 }
 
 .scene-car .tyre {
-  fill: #0a0b0c;
+  fill: var(--car-tyre);
   stroke: var(--ink);
   stroke-width: 1.4;
 }
@@ -364,11 +470,11 @@ textarea {
 }
 
 .scene-car .lamp.front {
-  fill: #5a564c;
+  fill: var(--lamp-front-off);
 }
 
 .scene-car .lamp.rear {
-  fill: #6b2e25;
+  fill: var(--lamp-rear-off);
 }
 
 .scene-car .beam,
@@ -434,11 +540,11 @@ textarea {
 }
 
 .driving .lamp.front {
-  fill: #f3e6c4;
+  fill: var(--lamp-front-on);
 }
 
 .driving .lamp.rear {
-  fill: #c2493a;
+  fill: var(--lamp-rear-on);
 }
 
 .driving .beam {
@@ -606,7 +712,7 @@ textarea {
   padding: 12px 14px;
   font-size: 13.5px;
   color: var(--amber);
-  border: 1px solid rgba(232, 163, 61, 0.4);
+  border: 1px solid var(--amber-line);
   border-radius: 6px;
 }
 
@@ -1076,7 +1182,7 @@ details[open] summary::before {
     fill: var(--amber);
   }
   50% {
-    fill: #3a3326;
+    fill: var(--hazard-off);
   }
 }
 
@@ -1179,4 +1285,104 @@ details[open] summary::before {
 
 .recovery-action {
   color: var(--supports);
+}
+
+/* ---------- Live investigation activity ---------- */
+
+.activity-feed {
+  display: grid;
+  gap: 2px;
+  max-height: 340px;
+  margin: 18px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.activity-item {
+  display: grid;
+  grid-template-columns: 52px 84px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 2px;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--line);
+  animation: rise 0.3s ease-out both;
+}
+
+.activity-time {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-stage {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.activity-message {
+  color: var(--ink);
+}
+
+.activity-detail {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.activity-item.stage-recovery .activity-stage,
+.activity-item.stage-recovery .activity-message {
+  color: var(--amber);
+}
+
+.activity-item.stage-complete .activity-stage,
+.activity-item.stage-complete .activity-message {
+  color: var(--supports);
+}
+
+.activity-waiting {
+  padding: 10px 2px;
+  font-size: 13.5px;
+  color: var(--faint);
+}
+
+.activity-log {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.activity-log summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.activity-log .activity-feed {
+  max-height: none;
+}
+
+@media (max-width: 560px) {
+  .activity-item {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .activity-stage {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .activity-item > div {
+    grid-column: 2;
+  }
+
+  .topbar-end {
+    gap: 10px;
+  }
 }

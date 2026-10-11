@@ -31,6 +31,9 @@ let inFlight = false;
 let elapsedTimer = null;
 let evidenceItems = [];
 let evidenceFilter = "all";
+let activityStarted = 0;
+let activityEntries = [];
+const activityFeed = document.getElementById("activity-feed");
 
 // Escape text before inserting into HTML.
 function escapeHtml(value) {
@@ -141,6 +144,126 @@ function drawScenery() {
   }
   document.getElementById("scope-path").setAttribute("d", scopePath());
 }
+
+/* ---------- Live activity ---------- */
+
+// Format milliseconds since the run started as +mm:ss.
+function formatOffset(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `+${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function activityItem(entry) {
+  const { event, offset } = entry;
+  const detail = event.detail ? `<p class="activity-detail">${escapeHtml(event.detail)}</p>` : "";
+  return `
+    <li class="activity-item stage-${escapeHtml(event.stage)}">
+      <span class="activity-time mono">${formatOffset(offset)}</span>
+      <span class="activity-stage">${escapeHtml(event.stage)}</span>
+      <div>
+        <p class="activity-message">${escapeHtml(event.message)}</p>
+        ${detail}
+      </div>
+    </li>`;
+}
+
+function resetActivity() {
+  activityStarted = Date.now();
+  activityEntries = [];
+  activityFeed.innerHTML = `<li class="activity-waiting">Waiting for the first step…</li>`;
+}
+
+// Add one real progress event to the running feed and keep the newest step in view.
+function appendActivity(event) {
+  const entry = { event, offset: Date.now() - activityStarted };
+  if (activityEntries.length === 0) {
+    activityFeed.innerHTML = "";
+  }
+  activityEntries.push(entry);
+  activityFeed.insertAdjacentHTML("beforeend", activityItem(entry));
+  activityFeed.scrollTop = activityFeed.scrollHeight;
+}
+
+function renderActivityLog() {
+  document.getElementById("activity-count").textContent = `(${plural(activityEntries.length, "step")})`;
+  document.getElementById("activity-log").innerHTML = activityEntries.map(activityItem).join("");
+}
+
+/**
+ * Read the NDJSON investigation stream: progress lines go to the feed as they arrive, and the stream
+ * ends with one result or error message, which is returned.
+ */
+async function readInvestigationStream(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final = null;
+
+  const handleLine = (line) => {
+    if (line.trim().length === 0) {
+      return;
+    }
+    const message = JSON.parse(line);
+    if (message.type === "progress") {
+      appendActivity(message.event);
+    } else if (message.type === "result" || message.type === "error") {
+      final = message;
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(handleLine);
+  }
+  handleLine(buffer);
+
+  if (!final) {
+    throw new Error("The investigation stream ended without a result.");
+  }
+  return final;
+}
+
+/* ---------- Theme ---------- */
+
+const themeToggle = document.getElementById("theme-toggle");
+const themeLabel = document.getElementById("theme-label");
+const prefersLight = window.matchMedia("(prefers-color-scheme: light)");
+
+function currentTheme() {
+  const chosen = document.documentElement.dataset.theme;
+  if (chosen === "light" || chosen === "dark") {
+    return chosen;
+  }
+  return prefersLight.matches ? "light" : "dark";
+}
+
+// The button names and shows the theme a click switches to.
+function syncThemeToggle() {
+  const target = currentTheme() === "dark" ? "light" : "dark";
+  themeToggle.dataset.target = target;
+  themeLabel.textContent = target === "light" ? "Light" : "Dark";
+  themeToggle.setAttribute("aria-label", `Switch to ${target} theme`);
+}
+
+themeToggle.addEventListener("click", () => {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem("autotrace-theme", next);
+  } catch {
+    // Storage can be unavailable (private windows); the theme still applies for this visit.
+  }
+  syncThemeToggle();
+});
+
+prefersLight.addEventListener("change", syncThemeToggle);
+syncThemeToggle();
 
 /* ---------- Stage switching ---------- */
 
@@ -414,6 +537,7 @@ function renderResult(input, result) {
   renderEvidence(result.evidence);
   renderAssessment(result.reasoning, result.unknowns);
   renderNextTest(result.recommendedNextTest);
+  renderActivityLog();
 
   resultPanel.querySelectorAll(".reveal").forEach((element, index) => {
     element.style.setProperty("--i", String(index));
@@ -470,26 +594,41 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  resetActivity();
   setLoading(true, input.vehicle);
 
   try {
     const response = await fetch("/api/investigate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
       body: JSON.stringify(input),
     });
 
-    const payload = await response.json();
+    // Requests rejected before the investigation starts (for example a malformed body) answer with plain JSON.
+    const streamed = (response.headers.get("Content-Type") ?? "").includes("application/x-ndjson");
+    if (!streamed || !response.body) {
+      const payload = await response.json();
+      if (!response.ok) {
+        showError(
+          payload.error ?? "Investigation failed",
+          payload.detail ?? "Unable to complete the investigation. Check the terminal for details and try again."
+        );
+        return;
+      }
+      renderResult(input, payload);
+      return;
+    }
 
-    if (!response.ok) {
+    const final = await readInvestigationStream(response.body);
+    if (final.type === "error") {
       showError(
-        payload.error ?? "Investigation failed",
-        payload.detail ?? "Unable to complete the investigation. Check the terminal for details and try again."
+        final.error ?? "Investigation failed",
+        final.detail ?? "Unable to complete the investigation. Check the terminal for details and try again."
       );
       return;
     }
 
-    renderResult(input, payload);
+    renderResult(input, final.result);
   } catch (error) {
     showError(
       "Investigation failed",
