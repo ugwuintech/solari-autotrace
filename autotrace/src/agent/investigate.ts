@@ -1,4 +1,4 @@
-import { createOllamaProvider } from "../llm/ollama.js";
+import { createProviderFromEnv } from "../llm/selectProvider.js";
 import type { LlmProvider } from "../llm/provider.js";
 import { buildHypothesisBoard } from "../reasoning/hypotheses.js";
 import { planFollowUpResearch } from "../reasoning/planFollowUpResearch.js";
@@ -35,7 +35,7 @@ export type InvestigationResearchRunner = (
 
 /**
  * Optional overrides for deterministic tests and alternate providers.
- * Defaults run the live Solari research pipeline and the local Ollama/Qwen provider.
+ * Defaults run the live Solari research pipeline and the provider chosen by AUTOTRACE_LLM (Ollama/Qwen unless set).
  */
 export type InvestigationDependencies = {
   research?: InvestigationResearchRunner;
@@ -138,7 +138,7 @@ export async function runInvestigation(
   dependencies: InvestigationDependencies = {}
 ): Promise<InvestigationResult> {
   const runResearch = dependencies.research ?? research;
-  const provider = dependencies.provider ?? createOllamaProvider();
+  const provider = dependencies.provider ?? createProviderFromEnv();
   const planFollowUp = dependencies.planFollowUpResearch ?? planFollowUpResearch;
   const executeFollowUp =
     dependencies.executeFollowUpResearch ?? executeFollowUpResearch;
