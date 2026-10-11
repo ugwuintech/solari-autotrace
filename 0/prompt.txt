@@ -1,0 +1,1 @@
+Tell me when you're ready, and I'll run one cheap single-query check first so you don't waste a full run. do this before i test again
