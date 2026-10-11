@@ -2,6 +2,8 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { trace } from "neatlogs";
+import { initTracing } from "../config/tracing.js";
 import type { InvestigationFormInput, InvestigationUiError } from "../types/ui.js";
 import {
   InvestigationInputError,
@@ -150,7 +152,11 @@ async function handleInvestigate(
     console.log("AutoTrace UI: starting investigation");
     console.log(`  Vehicle: ${input.vehicle}`);
     console.log(`  Codes: ${input.codes}`);
-    const result = await investigateFromUiInput(input);
+    // One root trace per request so concurrent investigations never share a trace.
+    const result = await trace(
+      { name: "investigate_ui_case", kind: "WORKFLOW", input },
+      () => investigateFromUiInput(input)
+    );
     console.log("AutoTrace UI: investigation complete");
     sendJson(response, 200, result);
   } catch (error: unknown) {
@@ -200,6 +206,8 @@ export function createUiServer(): http.Server {
 // Start the local tester UI on PORT (default 3000).
 async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
+  // Initialized once at startup; the SDK's shutdown handlers flush spans when the server stops.
+  await initTracing("diagnostic-investigation-api");
   const server = createUiServer();
 
   server.listen(port, "127.0.0.1", () => {

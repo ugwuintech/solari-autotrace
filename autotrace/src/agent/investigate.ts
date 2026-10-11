@@ -1,3 +1,4 @@
+import { span } from "neatlogs";
 import { createProviderFromEnv } from "../llm/selectProvider.js";
 import type { LlmProvider } from "../llm/provider.js";
 import { buildHypothesisBoard } from "../reasoning/hypotheses.js";
@@ -23,6 +24,9 @@ import type { ResearchObjective } from "../types/researchObjective.js";
  * Round 1 is initial research; round 2 is optional follow-up; there is never a round 3.
  */
 export const MAX_RESEARCH_ROUNDS = 2;
+
+// Each live Solari research run appears as a tool call in the Neatlogs trace.
+const tracedResearch = span({ kind: "TOOL", toolName: "web_research" }, research);
 
 /**
  * Research runner used by the investigation orchestrator.
@@ -137,7 +141,7 @@ export async function runInvestigation(
   diagnosticCase: DiagnosticCase,
   dependencies: InvestigationDependencies = {}
 ): Promise<InvestigationResult> {
-  const runResearch = dependencies.research ?? research;
+  const runResearch = dependencies.research ?? tracedResearch;
   const provider = dependencies.provider ?? createProviderFromEnv();
   const planFollowUp = dependencies.planFollowUpResearch ?? planFollowUpResearch;
   const executeFollowUp =

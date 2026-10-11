@@ -1,3 +1,5 @@
+import { trace } from "neatlogs";
+import { initTracing, shutdownTracing } from "./config/tracing.js";
 import {
   runInvestigation,
   type InvestigationResult,
@@ -299,8 +301,16 @@ async function main() {
   console.log("Running a bounded investigation (maximum of two research rounds).\n");
   console.log("Tip: use `npm run dev` for the local tester UI with arbitrary cases.\n");
 
-  const result = await runInvestigation(diagnosticCase);
-  printInvestigation(result);
+  await initTracing("diagnostic-investigation-cli");
+  try {
+    const result = await trace(
+      { name: "investigate_demo_case", kind: "WORKFLOW", input: diagnosticCase },
+      () => runInvestigation(diagnosticCase)
+    );
+    printInvestigation(result);
+  } finally {
+    await shutdownTracing();
+  }
 }
 
 main().catch((error: unknown) => {

@@ -3,6 +3,7 @@ import { parseAssessment } from "./parseAssessment.js";
 import { buildReasoningPrompt } from "./prompt.js";
 import type { LlmProvider } from "./provider.js";
 import { buildAssessmentSchema } from "./responseSchema.js";
+import { traceLlmCall } from "./traceLlmCall.js";
 
 // The neatHack LiteLLM gateway: one OpenAI-compatible endpoint in front of Claude and Nova models.
 const DEFAULT_BASE_URL = "https://litellm.vision.aivar.app/v1";
@@ -121,25 +122,28 @@ export function createLiteLlmProvider(options: LiteLlmProviderOptions = {}): Llm
       };
 
       try {
-        let response: Response;
-        try {
-          response = await doFetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-          });
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          throw new Error(`could not reach LiteLLM at ${endpoint}: ${reason}`);
-        }
+        const details = { provider: "litellm", model, temperature: body.temperature, messages: body.messages };
+        const completion = await traceLlmCall(details, async () => {
+          let response: Response;
+          try {
+            response = await doFetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            });
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(`could not reach LiteLLM at ${endpoint}: ${reason}`);
+          }
 
-        if (!response.ok) {
-          const detail = (await response.text()).trim().slice(0, 500);
-          throw new Error(`LiteLLM returned ${response.status} ${response.statusText}: ${detail}`);
-        }
+          if (!response.ok) {
+            const detail = (await response.text()).trim().slice(0, 500);
+            throw new Error(`LiteLLM returned ${response.status} ${response.statusText}: ${detail}`);
+          }
 
-        const completion = readCompletion(await response.json());
+          return readCompletion(await response.json());
+        });
         return parseAssessment(completion.content, request);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
