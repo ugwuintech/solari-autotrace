@@ -382,6 +382,22 @@ function renderNextTest(test) {
     </article>`;
 }
 
+// List failed actions the agent recovered from, so a successful result never hides a fallback.
+function renderRecoveries(recoveries) {
+  const section = document.getElementById("recoveries");
+  section.hidden = recoveries.length === 0;
+  document.getElementById("recovery-list").innerHTML = recoveries
+    .map(
+      (item) => `
+        <li>
+          <div class="recovery-step">${escapeHtml(item.step)}</div>
+          <div class="recovery-failure">${escapeHtml(item.failure)}</div>
+          <div class="recovery-action">${escapeHtml(item.action)}</div>
+        </li>`
+    )
+    .join("");
+}
+
 // Render a full InvestigationUiResult payload, with sections rising in sequence.
 function renderResult(input, result) {
   renderCaseHeader(input, result.summary);
@@ -393,6 +409,7 @@ function renderResult(input, result) {
     ? `Follow-up reassessment failed, so the first-round assessment is shown. ${result.reassessmentError}`
     : "";
 
+  renderRecoveries(result.recoveries ?? []);
   renderHypotheses(result.hypotheses);
   renderEvidence(result.evidence);
   renderAssessment(result.reasoning, result.unknowns);

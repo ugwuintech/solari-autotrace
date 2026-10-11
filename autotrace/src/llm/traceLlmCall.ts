@@ -6,6 +6,8 @@ export type LlmCallDetails = {
   model: string;
   temperature: number;
   messages: { role: string; content: string }[];
+  // Which structured-output mode this attempt used, when the provider tries more than one.
+  responseFormat?: string;
 };
 
 export type LlmCallResult = {
@@ -26,6 +28,9 @@ export function traceLlmCall(
     span.setAttribute("neatlogs.llm.provider", details.provider);
     span.setAttribute("neatlogs.llm.model_name", details.model);
     span.setAttribute("neatlogs.llm.temperature", details.temperature);
+    if (details.responseFormat) {
+      span.setAttribute("autotrace.llm.response_format", details.responseFormat);
+    }
     for (const [index, message] of details.messages.entries()) {
       span.setAttribute(`neatlogs.llm.input_messages.${index}.role`, message.role);
       span.setAttribute(`neatlogs.llm.input_messages.${index}.content`, message.content);

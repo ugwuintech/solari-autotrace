@@ -17,6 +17,7 @@ import type {
   FollowUpResearchResult,
 } from "../types/followUpResearch.js";
 import type { InvestigationState } from "../types/investigation.js";
+import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
 import type { ResearchObjective } from "../types/researchObjective.js";
 
 /**
@@ -76,6 +77,8 @@ export type InvestigationResult = {
   reasoningCalls: number;
   /** Present when round-2 reassessment failed; round-1 assessment and board are retained. */
   reassessmentError?: string;
+  /** Failed actions the agent recovered from, in the order they happened. */
+  recoveries: RecoveryEvent[];
 };
 
 // Start an empty investigation ready for the first research round.
@@ -122,7 +125,7 @@ function finish(
     reasoningCalls: number;
     reassessmentError?: string;
   }
-): InvestigationResult {
+): Omit<InvestigationResult, "recoveries"> {
   return {
     state: { ...state, status: "complete" },
     followUpObjectives: extras.followUpObjectives ?? [],
@@ -150,8 +153,21 @@ export async function runInvestigation(
   diagnosticCase: DiagnosticCase,
   dependencies: InvestigationDependencies = {}
 ): Promise<InvestigationResult> {
+  const recoveries: RecoveryEvent[] = [];
+  const result = await runBoundedInvestigation(diagnosticCase, dependencies, (event) => {
+    console.log(`Recovered from a failed ${event.step} step: ${event.action}\n`);
+    recoveries.push(event);
+  });
+  return { ...result, recoveries };
+}
+
+async function runBoundedInvestigation(
+  diagnosticCase: DiagnosticCase,
+  dependencies: InvestigationDependencies,
+  recordRecovery: RecoveryRecorder
+): Promise<Omit<InvestigationResult, "recoveries">> {
   const runResearch = dependencies.research ?? tracedResearch;
-  const provider = dependencies.provider ?? createProviderFromEnv();
+  const provider = dependencies.provider ?? createProviderFromEnv(process.env, { onRecovery: recordRecovery });
   const planFollowUp = dependencies.planFollowUpResearch ?? tracedPlanFollowUp;
   const executeFollowUp =
     dependencies.executeFollowUpResearch ?? executeFollowUpResearch;

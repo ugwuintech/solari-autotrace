@@ -1,4 +1,6 @@
+import type { JsonSchema } from "../types/jsonSchema.js";
 import type { DiagnosticAssessment, ReasoningRequest } from "../types/reasoning.js";
+import type { RecoveryRecorder } from "../types/recovery.js";
 import { validateAssessment } from "./validateAssessment.js";
 import { buildReasoningPrompt } from "./prompt.js";
 import type { LlmProvider } from "./provider.js";
@@ -18,7 +20,64 @@ export type LiteLlmProviderOptions = {
   model?: string;
   // Injectable so unit tests never touch the network.
   fetch?: typeof fetch;
+  // Told about every failed attempt the provider recovered from.
+  onRecovery?: RecoveryRecorder;
 };
+
+type ChatMessage = { role: "system" | "user"; content: string };
+
+type ResponseFormat = { label: string; value: unknown };
+
+/** A non-2xx gateway reply, kept structured so the caller can decide whether another attempt makes sense. */
+class GatewayError extends Error {
+  constructor(
+    readonly status: number,
+    statusText: string,
+    readonly detail: string
+  ) {
+    super(`LiteLLM returned ${status} ${statusText}: ${detail}`);
+  }
+}
+
+/**
+ * Drop array-length bounds from a schema. Some backends (Bedrock's structured output) only accept
+ * minItems of 0 or 1, so the bounds are removed here and enforced by parseAssessment instead,
+ * which already rejects an assessment that does not cover every hypothesis exactly once.
+ */
+export function relaxSchema(schema: JsonSchema): JsonSchema {
+  const { minItems: _minItems, maxItems: _maxItems, properties, items, ...rest } = schema;
+  const relaxed: JsonSchema = { ...rest };
+  if (properties) {
+    relaxed.properties = Object.fromEntries(
+      Object.entries(properties).map(([key, value]) => [key, relaxSchema(value)])
+    );
+  }
+  if (items) {
+    relaxed.items = relaxSchema(items);
+  }
+  return relaxed;
+}
+
+/**
+ * Response formats to try, strictest first. Each fallback asks the backend to enforce less while
+ * generating; none of them changes what the reply must satisfy, because every reply is validated.
+ */
+export function responseFormats(schema: JsonSchema): ResponseFormat[] {
+  const jsonSchema = (value: JsonSchema) => ({
+    type: "json_schema",
+    json_schema: { name: "diagnostic_assessment", schema: value },
+  });
+  return [
+    { label: "json_schema", value: jsonSchema(schema) },
+    { label: "json_schema without array-length bounds", value: jsonSchema(relaxSchema(schema)) },
+    { label: "json_object", value: { type: "json_object" } },
+  ];
+}
+
+// A 400 that names the schema or response format means the backend refused the format, not the request.
+function isFormatRejection(error: GatewayError): boolean {
+  return error.status === 400 && /schema|response_format|output_config|format/i.test(error.detail);
+}
 
 /** Token counts reported by the gateway for one completion, when it reports them. */
 export type LlmUsage = {
@@ -102,48 +161,66 @@ export function createLiteLlmProvider(options: LiteLlmProviderOptions = {}): Llm
     throw new Error("LITELLM_API_KEY is not set. Add it to autotrace/.env to use the LiteLLM provider.");
   }
 
+  // Send one chat completion with the given response format and read the reply.
+  async function complete(messages: ChatMessage[], format: ResponseFormat): Promise<LiteLlmCompletion> {
+    const body = { model, temperature: 0, response_format: format.value, messages };
+
+    let response: Response;
+    try {
+      response = await doFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`could not reach LiteLLM at ${endpoint}: ${reason}`);
+    }
+
+    if (!response.ok) {
+      const detail = (await response.text()).trim().slice(0, 500);
+      throw new GatewayError(response.status, response.statusText, detail);
+    }
+
+    return readCompletion(await response.json());
+  }
+
   return {
     name,
 
     async reason(request: ReasoningRequest): Promise<DiagnosticAssessment> {
       const { system, user } = buildReasoningPrompt(request);
-
-      const body = {
-        model,
-        temperature: 0,
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "diagnostic_assessment", schema: buildAssessmentSchema(request) },
-        },
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      };
+      const messages: ChatMessage[] = [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ];
+      const formats = responseFormats(buildAssessmentSchema(request));
 
       try {
-        const details = { provider: "litellm", model, temperature: body.temperature, messages: body.messages };
-        const completion = await traceLlmCall(details, async () => {
-          let response: Response;
+        let completion: LiteLlmCompletion | undefined;
+        for (const [index, format] of formats.entries()) {
+          const details = { provider: "litellm", model, temperature: 0, messages, responseFormat: format.label };
           try {
-            response = await doFetch(endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-              body: JSON.stringify(body),
-              signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-            });
+            completion = await traceLlmCall(details, () => complete(messages, format));
+            break;
           } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            throw new Error(`could not reach LiteLLM at ${endpoint}: ${reason}`);
+            // Only a refused response format is worth another attempt; anything else is a real failure.
+            const next = formats[index + 1];
+            if (!(error instanceof GatewayError) || !isFormatRejection(error) || !next) {
+              throw error;
+            }
+            options.onRecovery?.({
+              step: "reasoning",
+              failure: `${model} rejected the ${format.label} response format: ${error.detail.slice(0, 240)}`,
+              action: `retried with ${next.label}; the reply is still validated against the full assessment rules`,
+            });
           }
+        }
 
-          if (!response.ok) {
-            const detail = (await response.text()).trim().slice(0, 500);
-            throw new Error(`LiteLLM returned ${response.status} ${response.statusText}: ${detail}`);
-          }
-
-          return readCompletion(await response.json());
-        });
+        if (!completion) {
+          throw new Error("no response format was accepted");
+        }
         return validateAssessment(completion.content, request);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);

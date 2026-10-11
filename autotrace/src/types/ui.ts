@@ -1,3 +1,4 @@
+import type { RecoveryEvent } from "./recovery.js";
 import type { EvidenceRelevance } from "./evidence.js";
 import type { MentionPolarity } from "./hypothesis.js";
 import type { EvidenceSupport } from "./reasoning.js";
@@ -73,6 +74,8 @@ export type InvestigationUiResult = {
   recommendedNextTest: UiRecommendedTest | null;
   reasoning: string | null;
   disclaimer: string;
+  /** Failed actions the agent recovered from during this investigation. */
+  recoveries: RecoveryEvent[];
   /** Present when round-2 reassessment failed; round-1 assessment was retained. */
   reassessmentError?: string;
 };

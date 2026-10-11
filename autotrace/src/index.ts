@@ -279,6 +279,15 @@ function printInvestigation(result: InvestigationResult) {
     }
   }
 
+  if (result.recoveries.length > 0) {
+    console.log("Recovered failures:\n");
+    for (const [index, recovery] of result.recoveries.entries()) {
+      console.log(`${index + 1}. ${recovery.step}`);
+      console.log(`   Failure: ${recovery.failure}`);
+      console.log(`   Action: ${recovery.action}\n`);
+    }
+  }
+
   if (!state.assessment) {
     printSkippedAssessment();
   } else {

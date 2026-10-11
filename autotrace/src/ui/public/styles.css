@@ -1141,3 +1141,42 @@ details[open] summary::before {
     grid-template-columns: 26px minmax(0, 1fr);
   }
 }
+
+/* Failed actions the agent recovered from: step, what failed, what it did next. */
+.recoveries {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+}
+
+.recoveries h2 {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.recovery-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+}
+
+.recovery-step {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+.recovery-failure {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.recovery-action {
+  color: var(--supports);
+}

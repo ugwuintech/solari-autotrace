@@ -116,6 +116,7 @@ export function mapInvestigationResult(result: InvestigationResult): Investigati
     recommendedNextTest: mapRecommendedTest(result),
     reasoning: assessment?.reasoning ?? null,
     disclaimer: DIAGNOSTIC_DISCLAIMER,
+    recoveries: result.recoveries,
     ...(result.reassessmentError !== undefined
       ? { reassessmentError: result.reassessmentError }
       : {}),
