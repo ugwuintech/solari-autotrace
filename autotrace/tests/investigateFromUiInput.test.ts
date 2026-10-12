@@ -118,6 +118,8 @@ function sampleInvestigationResult(): InvestigationResult {
     },
     followUpObjectives: [],
     newEvidenceFromFollowUp: [],
+    recoveries: [],
+    searchBlocks: [],
     followUpFailures: [],
     providerName: "ollama-qwen3-4b",
     reasoningCalls: 2,

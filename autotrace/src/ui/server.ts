@@ -2,13 +2,17 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { InvestigationFormInput, InvestigationUiError } from "../types/ui.js";
+import { trace } from "neatlogs";
+import { initTracing } from "../config/tracing.js";
+import { withProgress } from "../observability/progress.js";
+import type { InvestigationFormInput, InvestigationStreamMessage, InvestigationUiError } from "../types/ui.js";
 import {
   InvestigationInputError,
   investigateFromUiInput,
 } from "./investigateFromUiInput.js";
 
 const DEFAULT_PORT = 3000;
+const NDJSON_TYPE = "application/x-ndjson";
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -139,6 +143,43 @@ async function serveStatic(
   }
 }
 
+// Write one newline-delimited JSON message, unless the browser has already gone away.
+function writeStreamMessage(response: http.ServerResponse, message: InvestigationStreamMessage): void {
+  if (!response.writableEnded && !response.destroyed) {
+    response.write(`${JSON.stringify(message)}\n`);
+  }
+}
+
+/**
+ * Run an investigation and stream its real progress events, then the result, as NDJSON.
+ * Every progress line comes from a pipeline step that actually happened; the final line is either the
+ * same InvestigationUiResult the JSON endpoint returns or the same error payload.
+ */
+async function streamInvestigation(input: InvestigationFormInput, response: http.ServerResponse): Promise<void> {
+  response.writeHead(200, {
+    "Content-Type": `${NDJSON_TYPE}; charset=utf-8`,
+    "Cache-Control": "no-store",
+    // Ask reverse proxies not to buffer, so events reach the browser as they happen.
+    "X-Accel-Buffering": "no",
+  });
+
+  try {
+    const result = await withProgress(
+      (event) => writeStreamMessage(response, { type: "progress", event }),
+      () => trace({ name: "investigate_ui_case", kind: "WORKFLOW", input }, () => investigateFromUiInput(input))
+    );
+    console.log("AutoTrace UI: investigation complete");
+    writeStreamMessage(response, { type: "result", result });
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`AutoTrace UI investigation failed:\n${reason}`);
+    const mapped = toUiError(error);
+    writeStreamMessage(response, { type: "error", statusCode: mapped.statusCode, ...mapped.payload });
+  } finally {
+    response.end();
+  }
+}
+
 // Handle POST /api/investigate by running the shared investigation pipeline.
 async function handleInvestigate(
   request: http.IncomingMessage,
@@ -147,10 +188,19 @@ async function handleInvestigate(
   try {
     const body = await readJsonBody(request);
     const input = asFormInput(body);
+    if ((request.headers.accept ?? "").includes(NDJSON_TYPE)) {
+      console.log(`AutoTrace UI: starting streamed investigation for ${input.vehicle} (${input.codes})`);
+      await streamInvestigation(input, response);
+      return;
+    }
     console.log("AutoTrace UI: starting investigation");
     console.log(`  Vehicle: ${input.vehicle}`);
     console.log(`  Codes: ${input.codes}`);
-    const result = await investigateFromUiInput(input);
+    // One root trace per request so concurrent investigations never share a trace.
+    const result = await trace(
+      { name: "investigate_ui_case", kind: "WORKFLOW", input },
+      () => investigateFromUiInput(input)
+    );
     console.log("AutoTrace UI: investigation complete");
     sendJson(response, 200, result);
   } catch (error: unknown) {
@@ -200,6 +250,8 @@ export function createUiServer(): http.Server {
 // Start the local tester UI on PORT (default 3000).
 async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
+  // Initialized once at startup; the SDK's shutdown handlers flush spans when the server stops.
+  await initTracing("diagnostic-investigation-api");
   const server = createUiServer();
 
   server.listen(port, "127.0.0.1", () => {

@@ -1,3 +1,5 @@
+import type { ProgressEvent } from "./progress.js";
+import type { RecoveryEvent } from "./recovery.js";
 import type { EvidenceRelevance } from "./evidence.js";
 import type { MentionPolarity } from "./hypothesis.js";
 import type { EvidenceSupport } from "./reasoning.js";
@@ -73,6 +75,13 @@ export type InvestigationUiResult = {
   recommendedNextTest: UiRecommendedTest | null;
   reasoning: string | null;
   disclaimer: string;
+  /**
+   * Set when a search was stopped (rate limit, block, or repeated navigation failure) and AutoTrace did
+   * not work around it, so an empty or thin result explains itself.
+   */
+  searchWarning: string | null;
+  /** Failed actions the agent recovered from during this investigation. */
+  recoveries: RecoveryEvent[];
   /** Present when round-2 reassessment failed; round-1 assessment was retained. */
   reassessmentError?: string;
 };
@@ -82,3 +91,12 @@ export type InvestigationUiError = {
   error: string;
   detail?: string;
 };
+
+/**
+ * One line of the streamed investigation response (Accept: application/x-ndjson).
+ * Progress lines describe real pipeline steps; the stream ends with exactly one result or error line.
+ */
+export type InvestigationStreamMessage =
+  | { type: "progress"; event: ProgressEvent }
+  | { type: "result"; result: InvestigationUiResult }
+  | ({ type: "error"; statusCode: number } & InvestigationUiError);

@@ -1,4 +1,6 @@
-import { createOllamaProvider } from "../llm/ollama.js";
+import { span } from "neatlogs";
+import { createProviderFromEnv } from "../llm/selectProvider.js";
+import { reportProgress } from "../observability/progress.js";
 import type { LlmProvider } from "../llm/provider.js";
 import { buildHypothesisBoard } from "../reasoning/hypotheses.js";
 import { planFollowUpResearch } from "../reasoning/planFollowUpResearch.js";
@@ -15,7 +17,11 @@ import type {
   FollowUpResearchFailure,
   FollowUpResearchResult,
 } from "../types/followUpResearch.js";
+import type { HypothesisBoard } from "../types/hypothesis.js";
 import type { InvestigationState } from "../types/investigation.js";
+import type { DiagnosticAssessment } from "../types/reasoning.js";
+import type { RecoveryEvent, RecoveryRecorder } from "../types/recovery.js";
+import type { SearchBlock } from "../types/search.js";
 import type { ResearchObjective } from "../types/researchObjective.js";
 
 /**
@@ -24,6 +30,18 @@ import type { ResearchObjective } from "../types/researchObjective.js";
  */
 export const MAX_RESEARCH_ROUNDS = 2;
 
+// Each live Solari research run appears as a tool call in the Neatlogs trace.
+const tracedResearch = span({ kind: "TOOL", toolName: "web_research" }, research);
+// Rule-based evidence polarity and the follow-up decision, so the trace shows why round 2 ran.
+const tracedHypothesisBoard = span(
+  { kind: "CHAIN", name: "evaluate_evidence", captureInput: false },
+  buildHypothesisBoard
+);
+const tracedPlanFollowUp = span(
+  { kind: "AGENT", name: "plan_follow_up", captureInput: false },
+  planFollowUpResearch
+);
+
 /**
  * Research runner used by the investigation orchestrator.
  * Defaults to the shared research() pipeline; injectable so unit tests never touch the network.
@@ -31,11 +49,13 @@ export const MAX_RESEARCH_ROUNDS = 2;
 export type InvestigationResearchRunner = (
   diagnosticCase: DiagnosticCase,
   options?: ResearchOptions
-) => Promise<Pick<ResearchResult, "queries" | "evidence">>;
+) => Promise<
+  Pick<ResearchResult, "queries" | "evidence"> & Partial<Pick<ResearchResult, "recoveries" | "searchBlocks">>
+>;
 
 /**
  * Optional overrides for deterministic tests and alternate providers.
- * Defaults run the live Solari research pipeline and the local Ollama/Qwen provider.
+ * Defaults run the live Solari research pipeline and the provider chosen by AUTOTRACE_LLM (Ollama/Qwen unless set).
  */
 export type InvestigationDependencies = {
   research?: InvestigationResearchRunner;
@@ -63,6 +83,10 @@ export type InvestigationResult = {
   reasoningCalls: number;
   /** Present when round-2 reassessment failed; round-1 assessment and board are retained. */
   reassessmentError?: string;
+  /** Failed actions the agent recovered from, in the order they happened. */
+  recoveries: RecoveryEvent[];
+  /** Searches that were stopped (block or repeated navigation failure) and not worked around. */
+  searchBlocks: SearchBlock[];
 };
 
 // Start an empty investigation ready for the first research round.
@@ -98,6 +122,33 @@ function combineEvidence(existing: Evidence[], incoming: Evidence[]): Evidence[]
   return [...existing, ...collectNewEvidence(incoming, existing)];
 }
 
+// Report the rebuilt hypothesis board as polarity totals, so the feed shows what the evidence says.
+function reportBoard(board: HypothesisBoard, evidenceCount: number): void {
+  const mentions = board.hypotheses.flatMap((entry) => entry.mentions);
+  const count = (polarity: string) => mentions.filter((mention) => mention.polarity === polarity).length;
+  reportProgress(
+    "hypotheses",
+    `Hypothesis board updated from ${evidenceCount} evidence item(s)`,
+    `${count("supports")} supporting, ${count("contradicts")} contradicting, ${count("context")} context mention(s)`
+  );
+}
+
+function reportReasoningStart(providerName: string, board: HypothesisBoard, evidenceCount: number): void {
+  reportProgress(
+    "reasoning",
+    `Asking ${providerName} to weigh ${board.hypotheses.length} hypotheses against ${evidenceCount} evidence item(s)`
+  );
+}
+
+// Report a validated assessment as each hypothesis's qualitative support label.
+function reportAssessment(assessment: DiagnosticAssessment): void {
+  reportProgress(
+    "reasoning",
+    `Assessment validated against the collected evidence; ${assessment.unknowns.length} open question(s)`,
+    assessment.hypothesisAssessments.map((item) => `${item.hypothesisId}: ${item.support}`).join(", ")
+  );
+}
+
 // Build a finished result that preserves the current state and optional follow-up metadata.
 function finish(
   state: InvestigationState,
@@ -109,7 +160,7 @@ function finish(
     reasoningCalls: number;
     reassessmentError?: string;
   }
-): InvestigationResult {
+): Omit<InvestigationResult, "recoveries" | "searchBlocks"> {
   return {
     state: { ...state, status: "complete" },
     followUpObjectives: extras.followUpObjectives ?? [],
@@ -137,9 +188,38 @@ export async function runInvestigation(
   diagnosticCase: DiagnosticCase,
   dependencies: InvestigationDependencies = {}
 ): Promise<InvestigationResult> {
-  const runResearch = dependencies.research ?? research;
-  const provider = dependencies.provider ?? createOllamaProvider();
-  const planFollowUp = dependencies.planFollowUpResearch ?? planFollowUpResearch;
+  const recoveries: RecoveryEvent[] = [];
+  const searchBlocks: SearchBlock[] = [];
+  const result = await runBoundedInvestigation(diagnosticCase, dependencies, searchBlocks, (event) => {
+    console.log(`Recovered from a failed ${event.step} step: ${event.action}\n`);
+    reportProgress("recovery", `Recovered a failed ${event.step} step: ${event.action}`, event.failure);
+    recoveries.push(event);
+  });
+  reportProgress(
+    "complete",
+    `Investigation complete: ${result.state.evidence.length} evidence item(s) over ${result.state.researchRound} round(s)`
+  );
+  return { ...result, recoveries, searchBlocks };
+}
+
+async function runBoundedInvestigation(
+  diagnosticCase: DiagnosticCase,
+  dependencies: InvestigationDependencies,
+  searchBlocks: SearchBlock[],
+  recordRecovery: RecoveryRecorder
+): Promise<Omit<InvestigationResult, "recoveries" | "searchBlocks">> {
+  const baseResearch = dependencies.research ?? tracedResearch;
+  // Every research round (initial and follow-up) reports its recoveries to the investigation.
+  const runResearch: InvestigationResearchRunner = async (researchCase, options) => {
+    const outcome = await baseResearch(researchCase, options);
+    for (const event of outcome.recoveries ?? []) {
+      recordRecovery(event);
+    }
+    searchBlocks.push(...(outcome.searchBlocks ?? []));
+    return outcome;
+  };
+  const provider = dependencies.provider ?? createProviderFromEnv(process.env, { onRecovery: recordRecovery });
+  const planFollowUp = dependencies.planFollowUpResearch ?? tracedPlanFollowUp;
   const executeFollowUp =
     dependencies.executeFollowUpResearch ?? executeFollowUpResearch;
 
@@ -147,16 +227,19 @@ export async function runInvestigation(
   let reasoningCalls = 0;
 
   // --- Round 1: initial research ---
+  reportProgress("research", "Round 1: researching the case");
   const round1 = await runResearch(diagnosticCase);
   state = {
     ...state,
     evidence: round1.evidence,
     attemptedQueries: recordExecutedQueries([], round1.queries),
     researchRound: 1,
-    hypothesisBoard: buildHypothesisBoard(round1.evidence),
+    hypothesisBoard: tracedHypothesisBoard(round1.evidence),
   };
+  reportBoard(state.hypothesisBoard, state.evidence.length);
 
   if (state.evidence.length === 0) {
+    reportProgress("research", "No evidence was collected, so the model assessment is skipped");
     return finish(state, {
       providerName: provider.name,
       reasoningCalls,
@@ -164,12 +247,14 @@ export async function runInvestigation(
   }
 
   state = { ...state, status: "assessing" };
+  reportReasoningStart(provider.name, state.hypothesisBoard, state.evidence.length);
   const assessment1 = await provider.reason({
     diagnosticCase,
     board: state.hypothesisBoard,
     evidence: state.evidence,
   });
   reasoningCalls += 1;
+  reportAssessment(assessment1);
 
   const unresolved1 = unresolvedFromAssessment(assessment1);
   state = {
@@ -204,6 +289,11 @@ export async function runInvestigation(
     });
   }
 
+  reportProgress(
+    "follow-up",
+    `Round 2: researching ${objectives.length} open question(s)`,
+    objectives.map((objective) => objective.question).join("\n")
+  );
   const followUp = await executeFollowUp(
     diagnosticCase,
     objectives,
@@ -227,6 +317,8 @@ export async function runInvestigation(
     researchRound: 2,
   };
 
+  reportProgress("follow-up", `Follow-up research found ${followUp.newEvidence.length} new evidence item(s)`);
+
   // No new evidence: keep the round-1 assessment and unresolved questions; do not call Qwen again.
   if (followUp.newEvidence.length === 0) {
     return finish(state, {
@@ -239,20 +331,23 @@ export async function runInvestigation(
   }
 
   const board1 = state.hypothesisBoard;
-  const board2 = buildHypothesisBoard(combinedEvidence);
+  const board2 = tracedHypothesisBoard(combinedEvidence);
   state = {
     ...state,
     hypothesisBoard: board2,
     status: "assessing",
   };
+  reportBoard(board2, combinedEvidence.length);
 
   try {
+    reportReasoningStart(provider.name, board2, combinedEvidence.length);
     const assessment2 = await provider.reason({
       diagnosticCase,
       board: board2,
       evidence: combinedEvidence,
     });
     reasoningCalls += 1;
+    reportAssessment(assessment2);
 
     // Replace assessment and unresolved queue; stop even if unknowns remain.
     state = {
@@ -271,6 +366,7 @@ export async function runInvestigation(
   } catch (error: unknown) {
     // Round-2 reassessment failed: keep the successful round-1 assessment and board.
     const reason = error instanceof Error ? error.message : String(error);
+    reportProgress("reasoning", "Reassessment failed, so the round-1 assessment is kept", reason);
     state = {
       ...state,
       hypothesisBoard: board1,

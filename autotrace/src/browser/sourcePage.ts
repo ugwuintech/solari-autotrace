@@ -1,6 +1,9 @@
 import { Solari, type LaunchOptions } from "@solarisdk/browser";
 import type { Page } from "patchright-core";
+import { reportProgress } from "../observability/progress.js";
+import { launchBrowser } from "./launch.js";
 import type { PageContent } from "../types/pageContent.js";
+import type { RecoveryRecorder } from "../types/recovery.js";
 import type { SearchResult } from "../types/search.js";
 
 const PAGE_TIMEOUT_MS = 20000;
@@ -81,6 +84,7 @@ async function readPageContent(page: Page, source: SearchResult): Promise<PageCo
 
   if (!text) {
     console.log(`Source page returned no readable text:\nURL: ${source.url}\n`);
+    reportProgress("source", "Source page had no readable text", source.url);
     return null;
   }
 
@@ -95,16 +99,21 @@ async function readPageContent(page: Page, source: SearchResult): Promise<PageCo
 async function extractOneSource(page: Page, source: SearchResult): Promise<PageContent | null> {
   try {
     console.log(`Visiting source: ${source.url}`);
+    reportProgress("source", "Reading source page", source.url);
     return await readPageContent(page, source);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.log(`AutoTrace source extraction failed:\nURL: ${source.url}\nReason: ${reason}\n`);
+    reportProgress("source", "Could not read source page", `${source.url} (${reason.split("\n")[0]})`);
     return null;
   }
 }
 
 // Launch a Solari browser, visit each source page, and return usable page content.
-export async function extractSourcePages(sources: SearchResult[]): Promise<PageContent[]> {
+export async function extractSourcePages(
+  sources: SearchResult[],
+  onRecovery?: RecoveryRecorder
+): Promise<PageContent[]> {
   if (sources.length === 0) {
     return [];
   }
@@ -118,7 +127,7 @@ export async function extractSourcePages(sources: SearchResult[]): Promise<PageC
     apiKey,
   });
 
-  const browser = await solari.launch(SOURCE_LAUNCH_OPTIONS);
+  const browser = await launchBrowser(solari, SOURCE_LAUNCH_OPTIONS, "source extraction", onRecovery);
 
   try {
     const page = await browser.newPage();

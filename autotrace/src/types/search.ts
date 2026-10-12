@@ -1,3 +1,5 @@
+import type { RecoveryEvent } from "./recovery.js";
+
 export type SearchResult = {
   title: string;
   url: string;
@@ -22,4 +24,6 @@ export type SearchOutcome = {
   engine: string;
   batches: SearchQueryResults[];
   blocks: SearchBlock[];
+  /** Failed searches that were retried, when the engine supports recovery. */
+  recoveries?: RecoveryEvent[];
 };

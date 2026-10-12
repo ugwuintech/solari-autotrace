@@ -1,8 +1,9 @@
 import type { DiagnosticAssessment, ReasoningRequest } from "../types/reasoning.js";
-import { parseAssessment } from "./parseAssessment.js";
+import { validateAssessment } from "./validateAssessment.js";
 import { buildReasoningPrompt } from "./prompt.js";
 import type { LlmProvider } from "./provider.js";
 import { buildAssessmentSchema } from "./responseSchema.js";
+import { traceLlmCall } from "./traceLlmCall.js";
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
 const DEFAULT_MODEL = "qwen3:4b";
@@ -157,8 +158,11 @@ export function createOllamaProvider(options: OllamaProviderOptions = {}): LlmPr
       };
 
       try {
-        const content = await requestCompletion(endpoint, body, model);
-        return parseAssessment(content, request);
+        const details = { provider: "ollama", model, temperature: 0, messages: body.messages };
+        const { content } = await traceLlmCall(details, async () => ({
+          content: await requestCompletion(endpoint, body, model),
+        }));
+        return validateAssessment(content, request);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         throw new Error(
